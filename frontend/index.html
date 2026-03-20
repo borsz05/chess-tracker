@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sakk elemző</title>
+  <link rel="icon" type="image/svg+xml" href="image12.svg">
+  <link rel="stylesheet" href="assets/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <div class="board-container">
+      <div class="board-with-eval">
+        <div id="eval-bar">
+          <div id="eval-bar-fill"></div>
+          <span id="eval-bar-score">0.0</span>
+        </div>
+        <div id="board"></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-title">Elemzés</div>
+            <div class="sidebar-subtitle">Élő játszma és engine</div>
+        </div>
+
+        <div class="eval-section">
+            <div class="top-lines" id="top-lines"></div>
+        </div>
+
+        <div class="moves-section">
+            <ol id="moves-list" class="moves-list"></ol>
+        </div>
+
+        <div class="status-section">
+            <h2>Állapot</h2>
+            <div id="connection-status">Kapcsolódás...</div>
+            <div id="game-status">Betöltés...</div>
+            <div id="side-to-move"></div>
+            <div id="move-counters"></div>
+
+            <div class="buttons">
+            <button id="new-game-btn">Új parti</button>
+            <button id="copy-pgn-btn">PGN másolása</button>
+            </div>
+        </div>
+    </div>
+  </div>
+  <div id="toast-container"></div>
+
+  <script>
+    window.__APP_CONFIG__ = {
+      backendOrigin: "http://localhost:8001",
+    };
+  </script>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="assets/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
