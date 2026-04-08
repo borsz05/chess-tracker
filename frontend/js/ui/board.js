@@ -59,12 +59,12 @@ export function initBoard(onDropHandler) {
 
   board = Chessboard(boardElement, {
     position: "start",
-    draggable: false,
+    draggable: true,
     moveSpeed: "fast",
     snapbackSpeed: 150,
     snapSpeed: 100,
     pieceTheme:
-      "assets/chessboardjs-1.0.0/img/chesspieces/chesscom_glass_pieces/{piece}.png",
+      "assets/chessboardjs-1.0.0/img/chesspieces/chesscom_icy/{piece}.png",
     onDrop: (source, target) => onUserDrop(source, target, onDropHandler),
   });
 }

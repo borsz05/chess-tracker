@@ -27,6 +27,10 @@ class AppConfig:
 
     move_vote_window: int = 4
     move_vote_min_count: int = 1
+    fuzzy_move_vote_min_count: int = 3
+
+    # Ha a nyers occupancy túl nagyot ugrik, azon a frame-en nem commitolunk.
+    max_raw_dist_for_commit: int = 2
 
     fuzzy_max_noise_cells: int = 1
     fuzzy_max_weighted_cost: float = 0.9

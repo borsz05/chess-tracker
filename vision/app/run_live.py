@@ -10,12 +10,13 @@ from urllib import error, request
 import cv2
 
 from vision.app.config import AppConfig
+from vision.app.debug_draw import draw_square_class_dots
 from vision.pipeline.tracker import ChessVisionTracker
 
 
 @dataclass
 class LiveConfig:
-    camera_index: int = 1
+    camera_index: int = 0
     camera_width: int = 1280
     camera_height: int = 720
     camera_fps: int = 30
@@ -25,6 +26,7 @@ class LiveConfig:
 
     show_preview: bool = True
     show_status_overlay: bool = True
+    show_square_class_debug: bool = True
     print_accepts: bool = True
 
     auto_reset_on_init_detect_fail_streak: int = 60
@@ -346,6 +348,7 @@ class LiveProcessor:
                 initialized = tracker.initialized
                 move_count = len(tracker.game.move_history)
                 camera_transform_name = tracker.camera_transform_name
+                centers_img = tracker.det.centers_img if tracker.det is not None else None
 
             return {
                 "result": self.last_result,
@@ -363,6 +366,7 @@ class LiveProcessor:
                 "initialized": initialized,
                 "move_count": move_count,
                 "camera_transform_name": camera_transform_name,
+                "centers_img": centers_img,
             }
 
     def stop(self):
@@ -461,6 +465,13 @@ def main():
                     every_nth=live_cfg.process_every_nth_captured_frame,
                 )
                 draw_lines(frame, lines)
+            else:
+                state = processor.snapshot()
+
+            if live_cfg.show_square_class_debug:
+                result = state["result"]
+                raw_labels = None if result is None else result.raw_labels
+                draw_square_class_dots(frame, state["centers_img"], raw_labels)
 
             preview = fit_preview(frame, live_cfg.preview_max_width)
 

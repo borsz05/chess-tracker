@@ -142,14 +142,6 @@ export function updateTopLinesUI(viewModel) {
     scoreSpan.classList.toggle("score-white-lead", whiteLeading);
     scoreSpan.classList.toggle("score-black-lead", !whiteLeading);
 
-    if (whiteLeading) {
-      scoreSpan.style.background = "#ffffff";
-      scoreSpan.style.color = "#312E2B";
-    } else {
-      scoreSpan.style.background = "#312E2B";
-      scoreSpan.style.color = "#ffffff";
-    }
-
     const moveSpan = document.createElement("span");
     moveSpan.className = "top-move-line";
     moveSpan.textContent = sanWithNumbers || "";

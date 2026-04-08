@@ -119,6 +119,18 @@ def weighted_diff(
     return total
 
 
+def _promotion_priority(move: chess.Move) -> int:
+    if move.promotion is None:
+        return 0
+    if move.promotion == chess.QUEEN:
+        return 1
+    return 2
+
+
+def _ordered_legal_moves(ch_board: chess.Board) -> list[chess.Move]:
+    return sorted(ch_board.legal_moves, key=_promotion_priority)
+
+
 def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
     ch_board = _as_chess_board(board)
 
@@ -206,7 +218,7 @@ def guess_move_from_occupancy(
         if not same_occupancy(current_occ, old_occ):
             return None
 
-    for mv in ch_board.legal_moves:
+    for mv in _ordered_legal_moves(ch_board):
         tmp = ch_board.copy()
         tmp.push(mv)
 
@@ -233,7 +245,7 @@ def resolve_move_from_occupancy(
     best_exact_move: MoveGuess | None = None
     best_exact_occ: list[list[int]] | None = None
 
-    for mv in ch_board.legal_moves:
+    for mv in _ordered_legal_moves(ch_board):
         tmp = ch_board.copy()
         tmp.push(mv)
         expected_occ = board_to_occupancy(tmp)
@@ -251,7 +263,7 @@ def resolve_move_from_occupancy(
 
     best = None
 
-    for mv in ch_board.legal_moves:
+    for mv in _ordered_legal_moves(ch_board):
         tmp = ch_board.copy()
         tmp.push(mv)
         expected_occ = board_to_occupancy(tmp)

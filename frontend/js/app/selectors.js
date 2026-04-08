@@ -16,13 +16,7 @@ export function selectTopLines(state) {
 }
 
 export function selectTopLinesSignature(state) {
-  return JSON.stringify({
-    top_lines: selectTopLines(state),
-    side_to_move: state?.side_to_move ?? null,
-    fullmove_number: state?.fullmove_number ?? null,
-    analysis_pending: !!state?.analysis_pending,
-    result: state?.result ?? null,
-  });
+  return JSON.stringify(selectTopLines(state));
 }
 
 export function selectStatusSignature(state) {
