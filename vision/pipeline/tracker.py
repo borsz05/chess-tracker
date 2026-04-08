@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterable
 
 import cv2
@@ -10,7 +9,7 @@ import numpy as np
 
 from chess_logic import Board, Game, board_to_occupancy
 from vision.app.config import AppConfig, make_stabilizer
-from vision.pipeline.batch_classifier import classify_frame_batch, classify_selected_squares
+from vision.pipeline.batch_classifier import BatchClassificationResult, classify_frame_batch, classify_selected_squares
 from vision.pipeline.board_detector import detect_board_on_frame
 from vision.pipeline.square_diff import compute_square_diffs
 
@@ -194,14 +193,6 @@ class ChessVisionTracker:
 
         return PipelineProfiler()
 
-    def _default_weights_path(self) -> str:
-        return str(
-            Path(__file__).resolve().parents[1]
-            / "models"
-            / "weights"
-            / "resnet18_best_szines_topdown_kepeken.pt"
-        )
-
     def _load_model(self):
         profiler = self._create_profiler()
         if profiler:
@@ -209,7 +200,7 @@ class ChessVisionTracker:
 
         from vision.models.occupancy_color_model import OccupancyColorModel
 
-        weights_path = self.cfg.weights_path or self._default_weights_path()
+        weights_path = self.cfg.weights_path
         model = OccupancyColorModel(weights_path=weights_path)
 
         if profiler:
@@ -302,13 +293,10 @@ class ChessVisionTracker:
         )
 
     def _copy_previous_classification(self):
-        class Result:
-            pass
-
-        result = Result()
-        result.labels = self.prev_raw_labels.copy()
-        result.confs = self.prev_raw_confs.copy()
-        return result
+        return BatchClassificationResult(
+            labels=self.prev_raw_labels.copy(),
+            confs=self.prev_raw_confs.copy(),
+        )
 
     def _partial_or_full_classify(self, frame_bgr: np.ndarray, img_warp: np.ndarray):
         if not self._should_use_partial_reclassify():
@@ -320,18 +308,14 @@ class ChessVisionTracker:
 
         updates = self._classify_selected_squares(img_warp, changed_squares)
 
-        class Result:
-            pass
-
-        result = Result()
-        result.labels = self.prev_raw_labels.copy()
-        result.confs = self.prev_raw_confs.copy()
+        labels = self.prev_raw_labels.copy()
+        confs = self.prev_raw_confs.copy()
 
         for (row, col), (label, conf) in updates.items():
-            result.labels[row, col] = label
-            result.confs[row, col] = conf
+            labels[row, col] = label
+            confs[row, col] = conf
 
-        return result
+        return BatchClassificationResult(labels=labels, confs=confs)
 
     def _detect_board(self, gray: np.ndarray):
         self._profile_start("board_detect")

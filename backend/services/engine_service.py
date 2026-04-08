@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import queue
 import threading
-import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -64,30 +63,17 @@ class EngineAnalysisService:
         depth = depth or self.default_depth
         multipv = multipv or self.default_multipv
 
-        if ch_board.is_game_over(claim_draw=True):
-            outcome = ch_board.outcome(claim_draw=True)
-            result_str = outcome.result() if outcome else "*"
-            return [{
-                "score": 0.0,
-                "line_san": f"Game over: {result_str}",
-                "pv_uci": [],
-                "mate_in": None,
-            }]
-
-        t0 = time.perf_counter()
         with self.engine_lock:
             infos = self.engine.analyse(
                 ch_board,
                 chess.engine.Limit(depth=depth),
                 multipv=multipv,
             )
-        t_engine = (time.perf_counter() - t0) * 1000
 
         if not isinstance(infos, list):
             infos = [infos]
 
         lines: list[dict] = []
-        t_parse_start = time.perf_counter()
 
         for info in infos:
             score_obj = info["score"].pov(chess.WHITE)
@@ -108,15 +94,7 @@ class EngineAnalysisService:
                 "mate_in": mate_in,
             })
 
-        t_parse = (time.perf_counter() - t_parse_start) * 1000
-
         lines.sort(key=lambda l: l["score"], reverse=True)
-
-        print(
-            f"[timing] analyse_top_lines depth={depth} multipv={multipv}: "
-            f"engine={t_engine:.1f}ms parse={t_parse:.1f}ms"
-        )
-
         return lines[:multipv]
 
     def schedule_analysis(

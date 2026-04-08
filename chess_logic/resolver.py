@@ -19,15 +19,14 @@ def chess_square_to_coords(square: int) -> tuple[int, int]:
     return 7 - rank, file_
 
 
-def _promotion_char(piece_type: int, is_white: bool) -> str:
+def _promotion_char(piece_type: int) -> str:
     mapping = {
-        chess.QUEEN: "Q",
-        chess.ROOK: "R",
-        chess.BISHOP: "B",
-        chess.KNIGHT: "N",
+        chess.QUEEN: "q",
+        chess.ROOK: "r",
+        chess.BISHOP: "b",
+        chess.KNIGHT: "n",
     }
-    ch = mapping.get(piece_type, "Q")
-    return ch if is_white else ch.lower()
+    return mapping.get(piece_type, "q")
 
 
 def _fen_key4(board: chess.Board) -> str:
@@ -41,9 +40,6 @@ def _as_chess_board(obj) -> chess.Board:
 
     if isinstance(obj, str):
         return chess.Board(obj)
-
-    if hasattr(obj, "to_fen"):
-        return chess.Board(obj.to_fen())
 
     raise TypeError(f"Nem támogatott board típus: {type(obj)!r}")
 
@@ -148,7 +144,7 @@ def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
 
     promotion_piece = None
     if move.promotion is not None:
-        promotion_piece = _promotion_char(move.promotion, moving_piece.color == chess.WHITE)
+        promotion_piece = _promotion_char(move.promotion)
 
     castling_color = None
     castling_side = None
@@ -170,40 +166,6 @@ def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
         promotion_piece=promotion_piece,
     )
 
-
-def guess_move_from_board(current_board, target_board) -> MoveGuess | None:
-    source = _as_chess_board(current_board)
-    target = _as_chess_board(target_board)
-
-    target_fen = target.fen()
-    target_key4 = _fen_key4(target)
-    target_board_fen = target.board_fen()
-
-    fallback_key4: MoveGuess | None = None
-    fallback_board_only: MoveGuess | None = None
-
-    for mv in source.legal_moves:
-        tmp = source.copy()
-        tmp.push(mv)
-
-        if tmp.fen() == target_fen:
-            return chess_move_to_moveguess(source, mv)
-
-        if fallback_key4 is None and _fen_key4(tmp) == target_key4:
-            fallback_key4 = chess_move_to_moveguess(source, mv)
-
-        if (
-            fallback_board_only is None
-            and tmp.board_fen() == target_board_fen
-            and tmp.turn == target.turn
-        ):
-            fallback_board_only = chess_move_to_moveguess(source, mv)
-
-    return fallback_key4 or fallback_board_only
-
-
-def guess_move_from_board_fen(current_board, target_fen: str) -> MoveGuess | None:
-    return guess_move_from_board(current_board, chess.Board(target_fen))
 
 
 def guess_move_from_occupancy(

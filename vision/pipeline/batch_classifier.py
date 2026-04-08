@@ -153,6 +153,7 @@ def classify_frame_batch(
         context=context,
     )
 
+@torch.no_grad()
 def classify_selected_squares(
     img_warp,
     bbox_grid,
@@ -165,37 +166,29 @@ def classify_selected_squares(
     Csak bizonyos mezőket klasszifikál.
     squares: [(r,c),...]
     """
-
     batch_tensors = []
     mapping = []
 
     for r, c in squares:
         roi = crop_with_context(img_warp, bbox_grid[r][c], context=context)
         x = preprocess_roi_for_batch(roi, model)
-
         if x is None:
             continue
-
         batch_tensors.append(x)
         mapping.append((r, c))
 
     if not batch_tensors:
         return {}
 
-    batch = torch.stack(batch_tensors, dim=0).to(model.device)
+    batch = torch.stack(batch_tensors, dim=0).to(model.device, non_blocking=True)
+    logits = model.model(batch)
+    probs = torch.softmax(logits, dim=1)
 
-    with torch.no_grad():
-        logits = model.model(batch)
-        probs = torch.softmax(logits, dim=1)
-
-    pred_idx = torch.argmax(probs, dim=1).cpu().numpy()
-    pred_conf = probs.max(dim=1).values.cpu().numpy()
-
+    pred_idx = torch.argmax(probs, dim=1).detach().cpu().numpy()
+    pred_conf = probs.max(dim=1).values.detach().cpu().numpy()
     label_ids = model.idx_to_label[pred_idx]
 
-    result = {}
-
-    for (r, c), lab, conf in zip(mapping, label_ids, pred_conf):
-        result[(r, c)] = (int(lab), float(conf))
-
-    return result
+    return {
+        (r, c): (int(lab), float(conf))
+        for (r, c), lab, conf in zip(mapping, label_ids, pred_conf)
+    }

@@ -64,7 +64,7 @@ class BackendState:
     ) -> AnalysisSnapshot:
         with self._lock:
             return AnalysisSnapshot(
-                fen=self.game.board.to_fen(),
+                fen=self.game.board.fen(),
                 move_count=len(self.game.move_history),
                 result=self.game.result,
                 depth=depth or self.settings.deep_depth,
@@ -77,7 +77,7 @@ class BackendState:
         with self._lock:
             same_position = (
                 len(self.game.move_history) == snapshot.move_count
-                and self.game.board.to_fen() == snapshot.fen
+                and self.game.board.fen() == snapshot.fen
             )
 
             if same_position:
@@ -85,7 +85,7 @@ class BackendState:
                 changed = True
 
             self.game.analysis_pending = False
-            changed = True or changed
+            changed = True
 
         if changed:
             self._emit_state_changed()
@@ -124,25 +124,18 @@ class BackendState:
     def apply_uci(self, uci: str) -> dict:
         uci = uci.strip()
 
+        try:
+            chess.Move.from_uci(uci)
+        except Exception:
+            raise ValueError("Invalid UCI move")
+
         with self._lock:
             if self.game.result != "*":
                 raise ValueError("Game already finished")
 
-            current_fen = self.game.board.to_fen()
-
-        try:
-            ch_board = chess.Board(current_fen)
-            ch_move = chess.Move.from_uci(uci)
-        except Exception:
-            raise ValueError("Invalid UCI move")
-
-        if ch_move not in ch_board.legal_moves:
-            raise ValueError("Illegal move in this position")
-
-        with self._lock:
             applied = self.game.apply_uci(uci)
             if applied is None:
-                raise ValueError("Could not apply move")
+                raise ValueError("Illegal move in this position")
 
         self.schedule_analysis()
         state = self._snapshot_state()

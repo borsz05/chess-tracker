@@ -2,8 +2,6 @@ from .game import Board, Game
 from .resolver import (
     board_to_occupancy,
     chess_move_to_moveguess,
-    guess_move_from_board,
-    guess_move_from_board_fen,
     guess_move_from_occupancy,
     occupancy_distance,
     resolve_move_from_occupancy,
@@ -24,8 +22,6 @@ __all__ = [
     "occupancy_distance",
     "weighted_diff",
     "chess_move_to_moveguess",
-    "guess_move_from_board",
-    "guess_move_from_board_fen",
     "guess_move_from_occupancy",
     "resolve_move_from_occupancy",
     "StateStabilizer",

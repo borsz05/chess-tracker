@@ -13,9 +13,6 @@ class Board(chess.Board):
     def __init__(self, fen: str | None = None):
         super().__init__(fen or chess.STARTING_FEN)
 
-    def to_fen(self) -> str:
-        return self.fen()
-
     @property
     def side_to_move(self) -> str:
         return "w" if self.turn == chess.WHITE else "b"
@@ -30,7 +27,7 @@ class Game:
 
     def __init__(self, start_fen: str):
         self.board = Board(start_fen)
-        self.start_fen = self.board.to_fen()
+        self.start_fen = self.board.fen()
 
         self.move_history: list[MoveRecord] = []
         self.result: str = "*"
@@ -58,7 +55,7 @@ class Game:
             is_checkmate=ch_after.is_checkmate(),
             is_stalemate=ch_after.is_stalemate(),
             result_after_move=result_after,
-            is_fifty_move_draw=ch_after.halfmove_clock >= 100,
+            is_fifty_move_draw=ch_after.is_fifty_moves(),
             is_threefold_repetition=ch_after.is_repetition(3),
             is_insufficient_material=ch_after.is_insufficient_material(),
         )
@@ -238,7 +235,7 @@ class Game:
         last_record = self.move_history[-1] if self.move_history else None
 
         return {
-            "fen": self.board.to_fen(),
+            "fen": self.board.fen(),
             "side_to_move": self.board.side_to_move,
             "fullmove_number": self.board.fullmove_number,
             "halfmove_clock": self.board.halfmove_clock,
@@ -251,10 +248,3 @@ class Game:
             "analysis_pending": self.analysis_pending,
         }
 
-    def reset(self, fen: str) -> None:
-        self.board = Board(fen)
-        self.start_fen = self.board.to_fen()
-        self.move_history.clear()
-        self.result = "*"
-        self.last_top_lines = None
-        self.analysis_pending = False

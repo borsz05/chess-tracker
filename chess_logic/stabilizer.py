@@ -162,7 +162,7 @@ class StateStabilizer:
         self._occ_buf.append(_grid_copy(occ))
         self._conf_buf.append(copy.deepcopy(confs))
 
-        if len(self._occ_buf) < max(3, min(self.buffer_size, 3)):
+        if len(self._occ_buf) < 3:
             self._mode = "WARMUP"
             return StabilizerDecision(None, f"warmup({len(self._occ_buf)})", self._mode)
 
