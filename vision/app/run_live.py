@@ -364,7 +364,6 @@ class LiveProcessor:
                 "last_backend_error": self.last_backend_error,
                 "initialized": initialized,
                 "move_count": move_count,
-                "orientation": "normal",
                 "centers_img": centers_img,
             }
 

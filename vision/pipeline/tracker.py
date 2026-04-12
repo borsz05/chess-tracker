@@ -28,12 +28,10 @@ class FrameProcessResult:
     mode: str
     raw_dist: int
     obs_mean: float
-    orientation: str = "unknown"
 
 
-def raw_to_standard(grid: np.ndarray, flipped: bool) -> np.ndarray:
-    if flipped:
-        grid = np.rot90(grid, 2).copy()
+def raw_to_standard(grid: np.ndarray) -> np.ndarray:
+    # Camera always: top-left = A1, bottom-right = H8
     grid = np.rot90(grid, 1).copy()
     return np.fliplr(grid).copy()
 
@@ -82,7 +80,6 @@ class ChessVisionTracker:
         )
 
         self.det = None
-        self.flipped: bool | None = None
 
         self.accepted_occ = None
         self.observed_occ = None
@@ -167,7 +164,6 @@ class ChessVisionTracker:
             mode=mode,
             raw_dist=raw_dist,
             obs_mean=obs_mean,
-            orientation="flipped" if self.flipped else "normal",
         )
 
     def _full_classify(self, frame_bgr: np.ndarray):
@@ -257,15 +253,9 @@ class ChessVisionTracker:
     def _init_samples_ready(self) -> bool:
         return len(self.init_label_grids) >= self.cfg.init_buffer_frames
 
-    def _detect_orientation(self) -> None:
-        centers = self.det.centers_img
-        first_x = centers[0][0][0]
-        last_x = centers[7][7][0]
-        self.flipped = last_x < first_x
-
     def _vote_init_grids(self):
-        init_labels_std = [raw_to_standard(grid, self.flipped) for grid in self.init_label_grids]
-        init_confs_std = [raw_to_standard(grid, self.flipped) for grid in self.init_conf_grids]
+        init_labels_std = [raw_to_standard(grid) for grid in self.init_label_grids]
+        init_confs_std = [raw_to_standard(grid) for grid in self.init_conf_grids]
         return weighted_vote_occ(init_labels_std, init_confs_std)
 
     def _store_init_baseline(self, frame_bgr: np.ndarray, cls, init_labels, init_confs):
@@ -321,8 +311,6 @@ class ChessVisionTracker:
                 obs_mean=0.0,
             )
 
-        self._detect_orientation()
-
         init_labels, init_confs = self._vote_init_grids()
         init_dist = occ_distance(init_labels, self.expected_start_occ)
 
@@ -341,7 +329,7 @@ class ChessVisionTracker:
             )
 
         self._store_init_baseline(frame_bgr, cls, init_labels, init_confs)
-        confs_std = raw_to_standard(cls.confs, self.flipped)
+        confs_std = raw_to_standard(cls.confs)
 
         return self._make_result(
             initialized=True,
@@ -395,8 +383,8 @@ class ChessVisionTracker:
         cls = self._partial_or_full_classify(frame_bgr, img_warp)
 
         raw_labels = cls.labels
-        labels_std = raw_to_standard(cls.labels, self.flipped)
-        confs_std = raw_to_standard(cls.confs, self.flipped)
+        labels_std = raw_to_standard(cls.labels)
+        confs_std = raw_to_standard(cls.confs)
 
         self.observed_occ = labels_std
         obs_mean = mean_conf(confs_std)
