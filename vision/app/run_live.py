@@ -347,7 +347,6 @@ class LiveProcessor:
                 tracker = self.tracker
                 initialized = tracker.initialized
                 move_count = len(tracker.game.move_history)
-                camera_transform_name = tracker.camera_transform_name
                 centers_img = tracker.det.centers_img if tracker.det is not None else None
 
             return {
@@ -365,7 +364,7 @@ class LiveProcessor:
                 "last_backend_error": self.last_backend_error,
                 "initialized": initialized,
                 "move_count": move_count,
-                "camera_transform_name": camera_transform_name,
+                "orientation": "normal",
                 "centers_img": centers_img,
             }
 

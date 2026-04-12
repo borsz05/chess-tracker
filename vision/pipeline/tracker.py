@@ -28,67 +28,14 @@ class FrameProcessResult:
     mode: str
     raw_dist: int
     obs_mean: float
-    camera_transform_name: str | None
+    orientation: str = "unknown"
 
 
-def transform_candidates():
-    rotations = [
-        ("id",        lambda g: g.copy()),
-        ("rot90_cw",  lambda g: np.rot90(g, -1).copy()),
-        ("rot180",    lambda g: np.rot90(g, 2).copy()),
-        ("rot90_ccw", lambda g: np.rot90(g, 1).copy()),
-    ]
-
-    candidates = []
-    for name, fn in rotations:
-        candidates.append((name, fn))
-        candidates.append((f"{name}+flip_lr", lambda g, fn=fn: np.fliplr(fn(g)).copy()))
-    return candidates
-
-
-def apply_transform(grid: np.ndarray, transform) -> np.ndarray:
-    _, fn = transform
-    return fn(grid)
-
-
-def raw_to_standard(grid: np.ndarray, camera_transform) -> np.ndarray:
-    # A nyers kamera-orientációból a belső standard orientációba forgatunk.
-    camera_view = apply_transform(grid, camera_transform)
-    return np.rot90(camera_view, 1).copy()
-
-
-def choose_camera_transform_from_matrix(centers_img):
-    best = None
-
-    for transform in transform_candidates():
-        pts = apply_transform(np.asarray(centers_img, dtype=np.float32), transform)
-
-        dxs: list[float] = []
-        dys: list[float] = []
-
-        for row in range(8):
-            for col in range(7):
-                x0, y0 = pts[row][col]
-                x1, y1 = pts[row][col + 1]
-                dxs.append(float(x1 - x0))
-
-        for row in range(7):
-            for col in range(8):
-                x0, y0 = pts[row][col]
-                x1, y1 = pts[row + 1][col]
-                dys.append(float(y1 - y0))
-
-        mean_dx = sum(dxs) / len(dxs)
-        mean_dy = sum(dys) / len(dys)
-        pos_dx_ratio = sum(delta > 0 for delta in dxs) / len(dxs)
-        pos_dy_ratio = sum(delta > 0 for delta in dys) / len(dys)
-
-        score = (pos_dx_ratio + pos_dy_ratio, mean_dx + mean_dy)
-        if best is None or score > best[0]:
-            best = (score, transform)
-
-    _, transform = best
-    return transform
+def raw_to_standard(grid: np.ndarray, flipped: bool) -> np.ndarray:
+    if flipped:
+        grid = np.rot90(grid, 2).copy()
+    grid = np.rot90(grid, 1).copy()
+    return np.fliplr(grid).copy()
 
 
 def occ_distance(a: np.ndarray, b: np.ndarray) -> int:
@@ -121,18 +68,6 @@ def weighted_vote_occ(label_grids: Iterable[np.ndarray], conf_grids: Iterable[np
     return best_labels, best_confs
 
 
-def most_common_move(candidate_buf):
-    if not candidate_buf:
-        return None, 0
-
-    counts: dict[str, int] = {}
-    for move in candidate_buf:
-        counts[move] = counts.get(move, 0) + 1
-
-    best_uci = max(counts, key=counts.get)
-    return best_uci, counts[best_uci]
-
-
 class ChessVisionTracker:
     def __init__(self, cfg: AppConfig):
         self.cfg = cfg
@@ -147,8 +82,7 @@ class ChessVisionTracker:
         )
 
         self.det = None
-        self.camera_transform = None
-        self.camera_transform_name = None
+        self.flipped: bool | None = None
 
         self.accepted_occ = None
         self.observed_occ = None
@@ -164,29 +98,21 @@ class ChessVisionTracker:
         self.prev_raw_confs = None
         self.frame_counter = 0
 
-        self.candidate_move_buf = deque(maxlen=cfg.move_vote_window)
-
     def _create_profiler(self):
         if not self.cfg.enable_pipeline_profiler:
             return None
-
         from vision.pipeline.profiler import PipelineProfiler
-
         return PipelineProfiler()
 
     def _load_model(self):
         profiler = self._create_profiler()
         if profiler:
             profiler.start("model_load")
-
         from vision.models.occupancy_color_model import OccupancyColorModel
-
         weights_path = self.cfg.weights_path
         model = OccupancyColorModel(weights_path=weights_path)
-
         if profiler:
             profiler.stop("model_load")
-
         self.profiler = profiler
         return model
 
@@ -241,7 +167,7 @@ class ChessVisionTracker:
             mode=mode,
             raw_dist=raw_dist,
             obs_mean=obs_mean,
-            camera_transform_name=self.camera_transform_name,
+            orientation="flipped" if self.flipped else "normal",
         )
 
     def _full_classify(self, frame_bgr: np.ndarray):
@@ -331,31 +257,15 @@ class ChessVisionTracker:
     def _init_samples_ready(self) -> bool:
         return len(self.init_label_grids) >= self.cfg.init_buffer_frames
 
-    def _choose_camera_transform(self, cls):
-        if self.camera_transform is not None:
-            return None
-
-        if getattr(self.det, "centers_img", None) is None:
-            self._reset_init_buffers()
-            return self._make_result(
-                initialized=False,
-                board_changed=False,
-                raw_labels=cls.labels,
-                confs_std=None,
-                san=None,
-                uci=None,
-                mode="init-no-centers-img",
-                raw_dist=0,
-                obs_mean=0.0,
-            )
-
-        self.camera_transform = choose_camera_transform_from_matrix(self.det.centers_img)
-        self.camera_transform_name, _ = self.camera_transform
-        return None
+    def _detect_orientation(self) -> None:
+        centers = self.det.centers_img
+        first_x = centers[0][0][0]
+        last_x = centers[7][7][0]
+        self.flipped = last_x < first_x
 
     def _vote_init_grids(self):
-        init_labels_std = [raw_to_standard(grid, self.camera_transform) for grid in self.init_label_grids]
-        init_confs_std = [raw_to_standard(grid, self.camera_transform) for grid in self.init_conf_grids]
+        init_labels_std = [raw_to_standard(grid, self.flipped) for grid in self.init_label_grids]
+        init_confs_std = [raw_to_standard(grid, self.flipped) for grid in self.init_conf_grids]
         return weighted_vote_occ(init_labels_std, init_confs_std)
 
     def _store_init_baseline(self, frame_bgr: np.ndarray, cls, init_labels, init_confs):
@@ -365,7 +275,6 @@ class ChessVisionTracker:
         self.stabilizer.update(init_labels.tolist(), init_confs.tolist())
         self.initialized = True
 
-        # Ezek kellenek a későbbi partial reclassify útvonalhoz.
         img_warp = cv2.warpPerspective(
             frame_bgr,
             self.det.M,
@@ -412,9 +321,7 @@ class ChessVisionTracker:
                 obs_mean=0.0,
             )
 
-        transform_error = self._choose_camera_transform(cls)
-        if transform_error is not None:
-            return transform_error
+        self._detect_orientation()
 
         init_labels, init_confs = self._vote_init_grids()
         init_dist = occ_distance(init_labels, self.expected_start_occ)
@@ -434,7 +341,7 @@ class ChessVisionTracker:
             )
 
         self._store_init_baseline(frame_bgr, cls, init_labels, init_confs)
-        confs_std = raw_to_standard(cls.confs, self.camera_transform)
+        confs_std = raw_to_standard(cls.confs, self.flipped)
 
         return self._make_result(
             initialized=True,
@@ -488,8 +395,8 @@ class ChessVisionTracker:
         cls = self._partial_or_full_classify(frame_bgr, img_warp)
 
         raw_labels = cls.labels
-        labels_std = raw_to_standard(cls.labels, self.camera_transform)
-        confs_std = raw_to_standard(cls.confs, self.camera_transform)
+        labels_std = raw_to_standard(cls.labels, self.flipped)
+        confs_std = raw_to_standard(cls.confs, self.flipped)
 
         self.observed_occ = labels_std
         obs_mean = mean_conf(confs_std)
@@ -505,29 +412,20 @@ class ChessVisionTracker:
 
         stable_occ = np.asarray(decision.emit_occ, dtype=np.int32)
         if occ_distance(self.accepted_occ, stable_occ) == 0:
-            self.candidate_move_buf.clear()
             return self._no_change(raw_labels, confs_std, "stable-same", raw_dist, obs_mean)
 
         resolve_result = self._resolve_move(stable_occ, confs_std)
         if resolve_result.move is None:
-            self.candidate_move_buf.clear()
             return self._no_change(raw_labels, confs_std, resolve_result.mode or "no-legal-fit", raw_dist, obs_mean)
 
-        uci = resolve_result.move.to_uci()
-        self.candidate_move_buf.append(uci)
-        best_uci, best_count = most_common_move(self.candidate_move_buf)
-
-        if best_uci != uci or best_count < self.cfg.move_vote_min_count:
-            return self._no_change(raw_labels, confs_std, f"move-vote {best_count}/{self.cfg.move_vote_min_count}", raw_dist, obs_mean)
+        best_uci = resolve_result.move.to_uci()
 
         applied_move = self._apply_move(best_uci)
         if applied_move is None:
-            self.candidate_move_buf.clear()
             return self._no_change(raw_labels, confs_std, "illegal-reject", raw_dist, obs_mean)
 
         san = self.game.move_history[-1].san if self.game.move_history else None
         self.accepted_occ = np.asarray(resolve_result.expected_occ, dtype=np.int32)
-        self.candidate_move_buf.clear()
 
         return self._make_result(
             initialized=True,

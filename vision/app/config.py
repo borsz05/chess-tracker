@@ -19,31 +19,19 @@ class AppConfig:
     context: float = 0.50
     cell: int = 96
 
-    detect_max_frames: int = 300
-
-    init_buffer_frames: int = 8
-    init_sample_every: int = 2
+    init_buffer_frames: int = 3
+    init_sample_every: int = 1
     init_max_dist: int = 2
-
-    move_vote_window: int = 4
-    move_vote_min_count: int = 1
-    fuzzy_move_vote_min_count: int = 3
-
-    # Ha a nyers occupancy túl nagyot ugrik, azon a frame-en nem commitolunk.
-    max_raw_dist_for_commit: int = 2
 
     fuzzy_max_noise_cells: int = 1
     fuzzy_max_weighted_cost: float = 0.9
 
-    # Profiling
     enable_pipeline_profiler: bool = False
 
-    # Partial reclassify
     partial_reclassify: bool = True
     partial_diff_threshold: float = 18.0
     partial_max_squares: int = 12
 
-    # időnként teljes refresh
     full_reclassify_interval: int = 30
 
     @property

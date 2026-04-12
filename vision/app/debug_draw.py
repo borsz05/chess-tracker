@@ -44,7 +44,6 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
         f"Tracker mode: {mode}",
         f"Last accepted: {san} [{uci}] ({san_mode}) | {secs_since_accept} ago",
         f"Moves accepted: {state['move_count']}",
-        f"Camera transform: {state['camera_transform_name']}",
         f"Backend sync: {backend_status}",
         f"Capture FPS: {capture_fps:.1f}",
         f"Process FPS: {state['processing_fps']:.1f}",
