@@ -7,7 +7,7 @@ from typing import Optional
 from chess_logic import StateStabilizer
 
 
-DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "resnet18_best_szines_topdown_kepeken.pt"
+DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "resnet18_best_topdown.pt"
 
 
 @dataclass
@@ -42,14 +42,14 @@ class AppConfig:
 def make_stabilizer():
     return StateStabilizer(
         buffer_size=5,
-        stable_frames=2,
-        min_votes_ratio=0.60,
+        stable_frames=4,
+        min_votes_ratio=0.65,
         emit_cooldown_s=0.20,
         min_mean_conf=0.50,
         min_changed_conf=0.50,
         max_changed_for_move=6,
         hold_changed_threshold=10,
         hold_low_conf_threshold=0.35,
-        hold_min_duration_s=0.30,
+        hold_min_duration_s=0.50,
         recovery_stable_frames=2,
     )
