@@ -41,7 +41,6 @@ export class StateSocket {
       transport: "websocket",
       connected: false,
       reconnectAttempt: this.reconnectAttempt,
-      lastError: null,
     });
   }
 
@@ -51,7 +50,6 @@ export class StateSocket {
       transport: "websocket",
       connected: false,
       reconnectAttempt: this.reconnectAttempt,
-      lastError: null,
     });
 
     this.ws = new WebSocket(this.url);
@@ -63,7 +61,6 @@ export class StateSocket {
         transport: "websocket",
         connected: true,
         reconnectAttempt: 0,
-        lastError: null,
       });
       this._startPing();
     });
@@ -80,10 +77,6 @@ export class StateSocket {
         if (msg?.type === "pong") {
           return;
         }
-
-        if (msg?.fen || msg?.moves || msg?.status) {
-          this.onState(msg, { via: "ws" });
-        }
       } catch (err) {
         console.error("WebSocket üzenet parse hiba:", err);
       }
@@ -95,7 +88,6 @@ export class StateSocket {
         transport: "websocket",
         connected: false,
         reconnectAttempt: this.reconnectAttempt,
-        lastError: "WebSocket hiba",
       });
     });
 
@@ -109,7 +101,6 @@ export class StateSocket {
         transport: "websocket",
         connected: false,
         reconnectAttempt: this.reconnectAttempt,
-        lastError: "Kapcsolat megszakadt",
       });
 
       this._scheduleReconnect();
@@ -132,7 +123,6 @@ export class StateSocket {
       transport: "websocket",
       connected: false,
       reconnectAttempt: this.reconnectAttempt,
-      lastError: null,
     });
   }
 

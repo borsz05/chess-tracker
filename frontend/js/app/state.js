@@ -5,7 +5,6 @@ let connectionState = {
   transport: "none",
   connected: false,
   reconnectAttempt: 0,
-  lastError: null,
 };
 
 export function getCurrentState() {

@@ -50,8 +50,6 @@ def uci_to_robot_payload(uci: str) -> dict[str, Any]:
 def best_move_payload_from_top_lines(top_lines: list[dict] | None) -> dict | None:
     """
     A legjobb engine sor első lépését alakítja robotbarát payload-dá.
-    A fen most még nincs használva, de később hasznos lehet capture/promóció
-    részletesebb kezeléséhez.
     """
     if not top_lines:
         return None

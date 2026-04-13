@@ -17,9 +17,8 @@ class Board(chess.Board):
     def side_to_move(self) -> str:
         return "w" if self.turn == chess.WHITE else "b"
 
-    def copy(self, *, stack: bool = True) -> "Board":
-        copied = super().copy(stack=stack)
-        return Board(copied.fen())
+    def copy(self) -> "Board":
+        return Board(self.fen())
 
 
 class Game:
@@ -225,8 +224,6 @@ class Game:
                 "san": record.san,
                 "uci": record.move.to_uci(),
                 "fen_after": record.fen_after,
-                "engine_eval": record.engine_eval,
-                "engine_bestmove": record.engine_bestmove,
             })
 
         return moves

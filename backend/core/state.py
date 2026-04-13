@@ -72,23 +72,16 @@ class BackendState:
             )
 
     def _on_analysis_ready(self, snapshot: AnalysisSnapshot, lines: list[dict]) -> None:
-        changed = False
-
         with self._lock:
             same_position = (
                 len(self.game.move_history) == snapshot.move_count
                 and self.game.board.fen() == snapshot.fen
             )
-
             if same_position:
                 self.game.last_top_lines = lines
-                changed = True
-
             self.game.analysis_pending = False
-            changed = True
 
-        if changed:
-            self._emit_state_changed()
+        self._emit_state_changed()
 
     def schedule_analysis(
         self,

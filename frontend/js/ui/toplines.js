@@ -75,31 +75,14 @@ export function buildTopLinesViewModel(state) {
     };
   }
 
-  let evalValue = 0;
-  let evalLabel = "0.0";
-  let bestMove = null;
-
-  const moves = state?.moves || [];
-  if (moves.length > 0) {
-    const last = moves[moves.length - 1];
-    if (typeof last.engine_eval === "number") {
-      evalValue = last.engine_eval;
-    }
-    if (last.engine_bestmove) {
-      bestMove = last.engine_bestmove;
-    }
-  }
-
-  evalLabel = formatEvalBarScore(evalValue).label;
-
   return {
     lines: [],
     sideToMove,
     fullmoveNumber,
-    evalEntry: evalValue,
-    evalLabel,
-    evalValue,
-    bestMove,
+    evalEntry: 0,
+    evalLabel: "0.0",
+    evalValue: 0,
+    bestMove: null,
     analysisPending: !!state?.analysis_pending,
     finished: isGameFinished(state),
     state,

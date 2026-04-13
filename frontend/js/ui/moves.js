@@ -39,8 +39,6 @@ function fullRender(list, moves) {
   let lastLi = null;
 
   for (const move of moves) {
-    const sanText = move.san || move.uci;
-
     if (move.color === "w") {
       const li = createMoveRow(move);
       list.appendChild(li);
@@ -53,7 +51,7 @@ function fullRender(list, moves) {
       } else {
         const blackSpan = lastLi.querySelector(".move-black");
         if (blackSpan) {
-          blackSpan.textContent = sanText;
+          blackSpan.textContent = move.san || move.uci;
         }
       }
     }

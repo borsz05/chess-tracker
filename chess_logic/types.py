@@ -58,9 +58,6 @@ class MoveRecord:
     fen_after: str
     san: str | None = None
 
-    engine_eval: float | None = None
-    engine_bestmove: str | None = None
-
     is_check: bool = False
     is_checkmate: bool = False
     is_stalemate: bool = False

@@ -118,7 +118,7 @@ class ChessVisionTracker:
             if self.profiler:
                 self.profiler.stop(name)
 
-    def _no_change(self, raw_labels, confs_std, mode: str, raw_dist: int, obs_mean: float) -> FrameProcessResult:
+    def _no_move_result(self, raw_labels, confs_std, mode: str, raw_dist: int, obs_mean: float) -> FrameProcessResult:
         return self._make_result(
             initialized=True,
             board_changed=False,
@@ -387,21 +387,21 @@ class ChessVisionTracker:
 
         decision = self._stabilize_observation(labels_std, confs_std)
         if decision.emit_occ is None:
-            return self._no_change(raw_labels, confs_std, f"{decision.mode}:{decision.reason}", raw_dist, obs_mean)
+            return self._no_move_result(raw_labels, confs_std, f"{decision.mode}:{decision.reason}", raw_dist, obs_mean)
 
         stable_occ = np.asarray(decision.emit_occ, dtype=np.int32)
         if occ_distance(self.accepted_occ, stable_occ) == 0:
-            return self._no_change(raw_labels, confs_std, "stable-same", raw_dist, obs_mean)
+            return self._no_move_result(raw_labels, confs_std, "stable-same", raw_dist, obs_mean)
 
         resolve_result = self._resolve_move(stable_occ, confs_std)
         if resolve_result.move is None:
-            return self._no_change(raw_labels, confs_std, resolve_result.mode or "no-legal-fit", raw_dist, obs_mean)
+            return self._no_move_result(raw_labels, confs_std, resolve_result.mode or "no-legal-fit", raw_dist, obs_mean)
 
         best_uci = resolve_result.move.to_uci()
 
         applied_move = self._apply_move(best_uci)
         if applied_move is None:
-            return self._no_change(raw_labels, confs_std, "illegal-reject", raw_dist, obs_mean)
+            return self._no_move_result(raw_labels, confs_std, "illegal-reject", raw_dist, obs_mean)
 
         san = self.game.move_history[-1].san if self.game.move_history else None
         self.accepted_occ = np.asarray(resolve_result.expected_occ, dtype=np.int32)

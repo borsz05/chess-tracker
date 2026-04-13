@@ -5,7 +5,7 @@ export function normalizeScore(entry) {
 
   if (!Number.isFinite(numeric)) numeric = 0;
 
-  if (mateIn !== null && mateIn !== undefined) {
+  if (mateIn !== null) {
     const sign = mateIn > 0 ? 1 : -1;
     const distance = Math.min(Math.abs(mateIn), 999);
     const sortScore = sign * (1000 - distance);
@@ -18,7 +18,7 @@ export function normalizeScore(entry) {
 export function formatTopLineScore(entry) {
   const { numeric, mateIn } = normalizeScore(entry);
 
-  if (mateIn !== null && mateIn !== undefined) {
+  if (mateIn !== null) {
     return {
       numeric,
       mateIn,
@@ -36,7 +36,7 @@ export function formatTopLineScore(entry) {
 export function formatEvalBarScore(entry) {
   const { numeric, mateIn } = normalizeScore(entry);
 
-  if (mateIn !== null && mateIn !== undefined) {
+  if (mateIn !== null) {
     return {
       numeric,
       mateIn,

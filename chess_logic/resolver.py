@@ -168,27 +168,6 @@ def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
 
 
 
-def guess_move_from_occupancy(
-    current_board,
-    new_occ: list[list[int]],
-    old_occ: list[list[int]] | None = None,
-) -> MoveGuess | None:
-    ch_board = _as_chess_board(current_board)
-
-    if old_occ is not None:
-        current_occ = board_to_occupancy(ch_board)
-        if not same_occupancy(current_occ, old_occ):
-            return None
-
-    for mv in _ordered_legal_moves(ch_board):
-        tmp = ch_board.copy()
-        tmp.push(mv)
-
-        if same_occupancy(board_to_occupancy(tmp), new_occ):
-            return chess_move_to_moveguess(ch_board, mv)
-
-    return None
-
 
 def resolve_move_from_occupancy(
     current_board,
