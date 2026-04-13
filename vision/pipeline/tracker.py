@@ -40,10 +40,6 @@ def occ_distance(a: np.ndarray, b: np.ndarray) -> int:
     return int(np.count_nonzero(a != b))
 
 
-def mean_conf(confs: np.ndarray) -> float:
-    return float(np.mean(confs))
-
-
 def disturbance_score(prev_occ: np.ndarray | None, curr_occ: np.ndarray | None) -> int:
     if prev_occ is None or curr_occ is None:
         return 0
@@ -83,11 +79,10 @@ class ChessVisionTracker:
 
         self.accepted_occ = None
         self.observed_occ = None
-        self.last_raw_occ = None
+        self.last_std_occ = None
 
         self.init_label_grids: list[np.ndarray] = []
         self.init_conf_grids: list[np.ndarray] = []
-        self.init_sample_counter = 0
         self.initialized = False
 
         self.prev_warp = None
@@ -241,14 +236,10 @@ class ChessVisionTracker:
         self.det = None
         self.init_label_grids.clear()
         self.init_conf_grids.clear()
-        self.init_sample_counter = 0
 
     def _append_init_sample(self, cls):
-        self.init_sample_counter += 1
-        should_store = len(self.init_label_grids) == 0 or (self.init_sample_counter % self.cfg.init_sample_every) == 0
-        if should_store:
-            self.init_label_grids.append(cls.labels)
-            self.init_conf_grids.append(cls.confs)
+        self.init_label_grids.append(cls.labels)
+        self.init_conf_grids.append(cls.confs)
 
     def _init_samples_ready(self) -> bool:
         return len(self.init_label_grids) >= self.cfg.init_buffer_frames
@@ -261,7 +252,7 @@ class ChessVisionTracker:
     def _store_init_baseline(self, frame_bgr: np.ndarray, cls, init_labels, init_confs):
         self.accepted_occ = init_labels.copy()
         self.observed_occ = init_labels.copy()
-        self.last_raw_occ = init_labels.copy()
+        self.last_std_occ = init_labels.copy()
         self.stabilizer.update(init_labels.tolist(), init_confs.tolist())
         self.initialized = True
 
@@ -387,10 +378,10 @@ class ChessVisionTracker:
         confs_std = raw_to_standard(cls.confs)
 
         self.observed_occ = labels_std
-        obs_mean = mean_conf(confs_std)
+        obs_mean = float(np.mean(confs_std))
 
-        raw_dist = disturbance_score(self.last_raw_occ, labels_std)
-        self.last_raw_occ = labels_std
+        raw_dist = disturbance_score(self.last_std_occ, labels_std)
+        self.last_std_occ = labels_std
 
         self._update_frame_cache(img_warp, cls)
 

@@ -242,14 +242,10 @@ class LiveProcessor:
         if sync_backend:
             self.sync_backend_new_game()
 
-    def _get_last_processed_seq(self) -> int:
-        with self._state_lock:
-            return self.last_processed_seq
-
     def _should_process_seq(self, seq: int) -> bool:
-        last_processed_seq = self._get_last_processed_seq()
-        needed_gap = self.live_cfg.process_every_nth_captured_frame
-        return (seq - last_processed_seq) >= needed_gap
+        with self._state_lock:
+            last_processed_seq = self.last_processed_seq
+        return (seq - last_processed_seq) >= self.live_cfg.process_every_nth_captured_frame
 
     def _process_with_tracker(self, frame):
         with self._tracker_lock:
@@ -409,8 +405,13 @@ def main():
                 time.sleep(0.01)
                 continue
 
+            state = processor.snapshot()
+
+            if not live_cfg.show_preview:
+                time.sleep(0.01)
+                continue
+
             if live_cfg.show_status_overlay:
-                state = processor.snapshot()
                 lines = build_overlay_lines(
                     state=state,
                     capture_seq=seq,
@@ -418,8 +419,6 @@ def main():
                     every_nth=live_cfg.process_every_nth_captured_frame,
                 )
                 draw_lines(frame, lines)
-            else:
-                state = processor.snapshot()
 
             if live_cfg.show_square_class_debug:
                 result = state["result"]
@@ -427,11 +426,6 @@ def main():
                 draw_square_class_dots(frame, state["centers_img"], raw_labels)
 
             preview = fit_preview(frame, live_cfg.preview_max_width)
-
-            if not live_cfg.show_preview:
-                time.sleep(0.01)
-                continue
-
             cv2.imshow(window_name, preview)
             key = cv2.waitKey(1) & 0xFF
 

@@ -26,7 +26,6 @@ def extract_squares_from_warp(img_warp, best_x, best_y, inner_pad_ratio=0.12):
     inner_pad_ratio: a mező széléből levágott arány
 
     Returns:
-      squares: 8x8 lista ROI képekkel
       bbox_warp: 8x8 lista (x0,y0,x1,y1) warp koordinátában
       centers_warp: 8x8 lista (cx,cy) warp koordinátában
       lines: (x_lines9, y_lines9)
@@ -36,7 +35,6 @@ def extract_squares_from_warp(img_warp, best_x, best_y, inner_pad_ratio=0.12):
     x_lines, _ = build_9_lines(best_x)
     y_lines, _ = build_9_lines(best_y)
 
-    squares = [[None for _ in range(8)] for _ in range(8)]
     bbox_warp = [[None for _ in range(8)] for _ in range(8)]
     centers_warp = [[None for _ in range(8)] for _ in range(8)]
 
@@ -67,13 +65,10 @@ def extract_squares_from_warp(img_warp, best_x, best_y, inner_pad_ratio=0.12):
                 y0 = max(0, min(h - 1, _to_int(y0f)))
                 y1 = max(0, min(h, _to_int(y1f)))
 
-            roi = img_warp[y0:y1, x0:x1].copy()
-
-            squares[r][c] = roi
             bbox_warp[r][c] = (x0, y0, x1, y1)
 
             cx = 0.5 * (x0f + x1f)
             cy = 0.5 * (y0f + y1f)
             centers_warp[r][c] = (float(cx), float(cy))
 
-    return squares, bbox_warp, centers_warp, (x_lines, y_lines)
+    return bbox_warp, centers_warp, (x_lines, y_lines)

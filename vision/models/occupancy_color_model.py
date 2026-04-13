@@ -19,7 +19,6 @@ class OccupancyColorModel:
         ckpt = torch.load(weights_path, map_location=self.device)
 
         self.class_names = ckpt.get("class_names", ["empty", "white", "black"])
-        self.class_to_idx = {name: i for i, name in enumerate(self.class_names)}
         self.idx_to_class = {i: name for i, name in enumerate(self.class_names)}
 
         self.img_size = int(ckpt.get("img_size", img_size))
@@ -34,9 +33,6 @@ class OccupancyColorModel:
 
         self.norm_mean_cpu = torch.tensor(mean, dtype=torch.float32).view(3, 1, 1)
         self.norm_std_cpu = torch.tensor(std, dtype=torch.float32).view(3, 1, 1)
-
-        self.norm_mean = self.norm_mean_cpu.to(self.device)
-        self.norm_std = self.norm_std_cpu.to(self.device)
 
         self.model = models.resnet18(weights=None)
         self.model.fc = nn.Linear(self.model.fc.in_features, 3)

@@ -20,7 +20,6 @@ class AppConfig:
     cell: int = 96
 
     init_buffer_frames: int = 3
-    init_sample_every: int = 1
     init_max_dist: int = 2
 
     fuzzy_max_noise_cells: int = 1

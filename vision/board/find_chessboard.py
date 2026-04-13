@@ -213,18 +213,11 @@ def getGrads(img):
     img = cv2.blur(img, (5, 5))
     gx = cv2.Sobel(img, cv2.CV_64F, 1, 0)
     gy = cv2.Sobel(img, cv2.CV_64F, 0, 1)
-
     grad_mag = gx * gx + gy * gy
-    grad_phase = np.arctan2(gy, gx)
-    grad_phase_masked = grad_phase.copy()
-
-    threshold = 2 * np.mean(grad_mag)
-    grad_phase_masked[grad_mag < threshold] = np.nan
-
-    return grad_mag, grad_phase_masked, grad_phase, gx, gy
+    return grad_mag, gx, gy
 
 def getBestLines(img_warped, cell_size=32):
-    grad_mag, _, _, gx, gy = getGrads(img_warped)
+    grad_mag, gx, gy = getGrads(img_warped)
 
     gx_pos = np.clip(gx, 0, None)
     gx_neg = np.clip(-gx, 0, None)
@@ -259,6 +252,7 @@ def findChessboard(img, min_pts_needed=15, max_pts_needed=25):
 
     curr_num_good = 0
     curr_grid_next = curr_grid_good = curr_M = None
+    num_good = 0
 
     for cnt in contours:
         cnt = cnt.squeeze()

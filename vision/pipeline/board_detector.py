@@ -36,9 +36,6 @@ def centers_to_image(centers_warp: CenterGrid, M: np.ndarray) -> CenterGrid:
 class DetectionResult:
     ok: bool
     M: Optional[np.ndarray] = None
-    img_warp_gray: Optional[np.ndarray] = None
-    best_x: Optional[np.ndarray] = None
-    best_y: Optional[np.ndarray] = None
     bbox_warp: Optional[BBoxGrid] = None
     centers_warp: Optional[CenterGrid] = None
     centers_img: Optional[CenterGrid] = None
@@ -76,7 +73,7 @@ def detect_board_on_frame(
     if best_x is None or best_y is None:
         return DetectionResult(ok=False)
 
-    _, bbox_warp, centers_warp, _ = extract_squares_from_warp(
+    bbox_warp, centers_warp, _ = extract_squares_from_warp(
         img_warp_gray,
         best_x,
         best_y,
@@ -88,9 +85,6 @@ def detect_board_on_frame(
     return DetectionResult(
         ok=True,
         M=M,
-        img_warp_gray=img_warp_gray,
-        best_x=best_x,
-        best_y=best_y,
         bbox_warp=bbox_warp,
         centers_warp=centers_warp,
         centers_img=centers_img,
