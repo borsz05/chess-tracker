@@ -2,12 +2,19 @@
 Board calibration: maps chess squares to physical (x, y) coordinates.
 
 Calibration is defined by two corner points measured by the robot arm:
-  - A1 corner  (file a, rank 1  →  board col 0, row 7 in 0-indexed grid)
-  - H1 corner  (file h, rank 1  →  board col 7, row 7)
+  - A1 corner  (file a, rank 1  —  white queen-side rook)
+  - H8 corner  (file h, rank 8  —  black king-side rook)
 
-From these two points the full 8×8 grid is derived via bilinear interpolation,
-assuming the board is axis-aligned along the A1→H1 edge and that ranks go
-perpendicular to that edge.
+From these two diagonal corners the full 8×8 grid is derived.
+Assuming the board is square and ranks run perpendicular (90° CCW) to files,
+the file and rank unit vectors are solved from the diagonal:
+
+    H8 = A1 + 7·file_step + 7·rank_step
+    rank_step = rotate90CCW(file_step) = (−file_y, file_x)
+
+    → file_x = (dx + dy) / 14
+      file_y = (dy − dx) / 14
+    where (dx, dy) = H8 − A1
 
 Coordinate system: whatever the robot arm uses (e.g. mm in its base frame).
 Only x and y are stored; z (height) is robot-specific and handled in the
@@ -48,29 +55,39 @@ def _square_to_col_row(square: str) -> tuple[int, int]:
 
 
 class Calibration:
-    """Holds A1 and H1 physical coordinates and derives all 64 squares."""
+    """Holds A1 and H8 physical coordinates and derives all 64 squares."""
 
-    def __init__(self, a1: tuple[float, float], h1: tuple[float, float]):
+    def __init__(self, a1: tuple[float, float], h8: tuple[float, float]):
         """
         Parameters
         ----------
         a1 : (x, y) physical position of the centre of square A1
-        h1 : (x, y) physical position of the centre of square H1
+        h8 : (x, y) physical position of the centre of square H8
+
+        The rank direction is assumed to be 90° CCW from the file direction.
+        This means: when standing at A1 and looking towards H1, rank 8 is to
+        the left.  If the board is oriented differently relative to the robot
+        base frame, flip the sign of _step_rank after construction.
         """
         self.a1 = a1
-        self.h1 = h1
+        self.h8 = h8
 
-        # Unit vector along the file direction (A→H, i.e. col direction)
-        dx = h1[0] - a1[0]
-        dy = h1[1] - a1[1]
+        dx = h8[0] - a1[0]
+        dy = h8[1] - a1[1]
         dist = math.hypot(dx, dy)
         if dist == 0:
-            raise ValueError("A1 and H1 cannot be at the same position")
-        self._step_file = (dx / 7.0, dy / 7.0)   # one square in file direction
+            raise ValueError("A1 and H8 cannot be at the same position")
 
-        # Unit vector along the rank direction (rank 1→8, perpendicular to file)
-        # Rotate file vector 90° CCW: (dx, dy) → (-dy, dx)
-        self._step_rank = (-dy / 7.0, dx / 7.0)
+        # Solve for file_step from the A1→H8 diagonal.
+        # H8 = A1 + 7·file + 7·rank  where rank = rotate90CCW(file)
+        # dx = 7·fx − 7·fy
+        # dy = 7·fy + 7·fx
+        fx = (dx + dy) / 14.0
+        fy = (dy - dx) / 14.0
+        self._step_file = (fx, fy)
+
+        # rank_step = rotate90CCW(file_step): (fx,fy) → (−fy, fx)
+        self._step_rank = (-fy, fx)
 
     # ------------------------------------------------------------------
     # Core computation
@@ -94,7 +111,7 @@ class Calibration:
     def save(self, path: Path = CALIBRATION_FILE) -> None:
         data: dict[str, Any] = {
             "a1": list(self.a1),
-            "h1": list(self.h1),
+            "h8": list(self.h8),
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2))
@@ -109,8 +126,8 @@ class Calibration:
             )
         data = json.loads(path.read_text())
         a1 = tuple(data["a1"])
-        h1 = tuple(data["h1"])
-        return cls(a1=a1, h1=h1)  # type: ignore[arg-type]
+        h8 = tuple(data["h8"])
+        return cls(a1=a1, h8=h8)  # type: ignore[arg-type]
 
     def __repr__(self) -> str:
-        return f"Calibration(a1={self.a1}, h1={self.h1})"
+        return f"Calibration(a1={self.a1}, h8={self.h8})"

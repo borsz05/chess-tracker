@@ -3,13 +3,13 @@ robot/calibrate.py — pre-match calibration script.
 
 Guides the operator through teaching the robot two board corners:
   1. A1 corner  (white queen-side rook square)
-  2. H1 corner  (white king-side rook square)
+  2. H8 corner  (black king-side rook square)
 
 After both points are recorded the script saves robot/calibration.json.
 Optionally it also records the graveyard zone (first and second slot,
 from which the step vector is derived).
 
-Run once before each match:
+Run once before each match (and whenever the board or robot base moves):
     python -m robot.calibrate
 
 Requires a concrete RobotInterface implementation.
@@ -92,16 +92,19 @@ def main() -> None:
     print("=" * 60)
     print("  Chess Robot — Board Calibration")
     print("=" * 60)
-    print("  This script records the physical positions of the A1 and H1")
+    print("  This script records the physical positions of the A1 and H8")
     print("  board corners so the robot knows where every square is.")
+    print()
+    print("  Camera orientation: A1 must be in the TOP-LEFT of the camera")
+    print("  frame, H8 in the BOTTOM-RIGHT.")
     print()
 
     robot = RobotImpl()
 
     a1 = _teach_corner(robot, "A1")
-    h1 = _teach_corner(robot, "H1")
+    h8 = _teach_corner(robot, "H8")
 
-    cal = Calibration(a1=a1, h1=h1)
+    cal = Calibration(a1=a1, h8=h8)
     cal.save(CALIBRATION_FILE)
 
     # Optional graveyard
@@ -113,15 +116,15 @@ def main() -> None:
     print(f"\n{'=' * 60}")
     print(f"  Calibration complete.  File: {CALIBRATION_FILE}")
     print(f"  A1 = {a1}")
-    print(f"  H1 = {h1}")
+    print(f"  H8 = {h8}")
 
     # Quick sanity check
     print("\n  Square spot-check:")
-    for sq in ["a1", "h1", "e4", "a8", "h8"]:
+    for sq in ["a1", "h8", "e4", "a8", "h1"]:
         xy = cal.square_to_xy(sq)
         print(f"    {sq.upper()} → x={xy[0]:.2f}  y={xy[1]:.2f}")
 
-    print("\n  Done.  You can now start the match.")
+    print("\n  Done.  You can now start the vision pipeline.")
 
 
 if __name__ == "__main__":

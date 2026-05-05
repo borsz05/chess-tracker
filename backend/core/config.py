@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 class Settings:
     start_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-    stockfish_path: str = "./stockfish/stockfish-windows-x86-64-avx2.exe"
+    stockfish_path: str = "/usr/games/stockfish"
     deep_depth: int = 16
     deep_multipv: int = 3
 

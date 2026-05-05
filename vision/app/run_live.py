@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib import error, request
 
 import cv2
@@ -12,6 +14,36 @@ import cv2
 from vision.app.config import AppConfig
 from vision.app.debug_draw import build_overlay_lines, draw_lines, draw_square_class_dots
 from vision.pipeline.tracker import ChessVisionTracker
+
+_CALIBRATION_FILE = Path(__file__).resolve().parents[2] / "robot" / "calibration.json"
+
+
+def _check_calibration_gate() -> None:
+    """Refuse to start if robot/calibration.json is missing.
+
+    The operator must run `python -m robot.calibrate` first, then clear
+    the board of hands and the robot arm before starting vision detection.
+    Pass --no-robot to skip this check when running without the robot.
+    """
+    if "--no-robot" in sys.argv:
+        return
+    if not _CALIBRATION_FILE.exists():
+        print(
+            "\nERROR: robot/calibration.json not found.\n"
+            "Run calibration first:\n"
+            "    python -m robot.calibrate\n"
+            "Then ensure the board is clear and restart the vision pipeline.\n"
+            "To run without a robot (vision-only), pass --no-robot.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"Calibration file found: {_CALIBRATION_FILE}")
+    ans = input(
+        "Calibration complete and board clear of hands/robot? [Y/n]: "
+    ).strip().lower()
+    if ans not in ("", "y"):
+        print("Aborting — re-run after clearing the board.")
+        sys.exit(0)
 
 
 @dataclass
@@ -380,6 +412,8 @@ def fit_preview(frame, max_width: int):
 
 
 def main():
+    _check_calibration_gate()
+
     app_cfg = AppConfig()
     live_cfg = LiveConfig()
 
