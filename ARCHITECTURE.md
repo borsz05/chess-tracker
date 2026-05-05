@@ -10,31 +10,31 @@ This document describes the full data flow, component responsibilities, coordina
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Host machine (Ubuntu 22.04)                                        │
 │                                                                     │
-│  ┌──────────┐   frame    ┌─────────────────────┐                   │
-│  │  Webcam  │──────────▶│  vision/             │                   │
-│  │ (V4L2)  │           │  LatestFrameCamera    │                   │
-│  └──────────┘           │  LiveProcessor        │                   │
-│                          │  ChessVisionTracker   │                   │
-│                          └────────┬────────────┘                   │
+│  ┌──────────┐   frame    ┌─────────────────────┐                    │
+│  │  Webcam  │──────────▶ │  vision/            │                    │
+│  │ (V4L2)  │             │  LatestFrameCamera  │                    │
+│  └──────────┘            │  LiveProcessor      │                    │
+│                          │  ChessVisionTracker │                    │
+│                          └────────┬────────────┘                    │
 │                     POST /api/move│                                 │
-│                          ┌────────▼────────────┐                   │
-│                          │  backend/   :8001    │                   │
-│                          │  FastAPI + Stockfish │◀── WS ─── Browser│
-│                          └────────┬────────────┘                   │
-│                                   │ (developer must wire)          │
-│                          ┌────────▼────────────┐                   │
-│                          │  robot/              │                   │
-│                          │  RobotImpl (HTTP)    │                   │
-│                          └────────┬────────────┘                   │
+│                          ┌────────▼────────────┐                    │
+│                          │  backend/   :8001   │                    │
+│                          │  FastAPI + Stockfish│◀── WS ─── Browser  │
+│                          └────────┬────────────┘                    │
+│                                   │ (developer must wire)           │
+│                          ┌────────▼────────────┐                    │
+│                          │  robot/             │                    │
+│                          │  RobotImpl (HTTP)   │                    │
+│                          └────────┬────────────┘                    │
 │               POST /execute :8002 │                                 │
-│  ┌────────────────────────────────▼───────────────────────────┐   │
-│  │  Docker container: franka_ros2_humble                       │   │
-│  │  ROS2 Humble  +  MoveIt2  +  chess_executor.py  :8002      │   │
-│  └──────────────────────────────┬──────────────────────────────┘  │
+│  ┌────────────────────────────────▼───────────────────────────┐     │
+│  │  Docker container: franka_ros2_humble                      │     │
+│  │  ROS2 Humble  +  MoveIt2  +  chess_executor.py  :8002      │     │
+│  └──────────────────────────────┬─────────────────────────────┘     │
 └─────────────────────────────────┼───────────────────────────────────┘
                                   │ EtherCAT (libfranka)
                         ┌─────────▼──────────┐
-                        │  Franka Research 3  │
+                        │  Franka Research 3 │
                         └────────────────────┘
 ```
 
