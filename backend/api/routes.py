@@ -45,6 +45,12 @@ def post_move(request: Request, req: MoveRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/robot/busy")
+def get_robot_busy(request: Request):
+    state = get_backend_state(request)
+    return {"busy": state.robot_busy}
+
+
 @router.get("/robot/best-move")
 def get_robot_best_move(request: Request):
     state = get_backend_state(request)

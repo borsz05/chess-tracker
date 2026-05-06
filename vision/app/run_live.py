@@ -110,6 +110,13 @@ class BackendSyncClient:
     def push_move(self, uci: str) -> dict:
         return self._request_json("POST", "/api/move", {"uci": uci})
 
+    def is_robot_busy(self) -> bool:
+        try:
+            resp = self._request_json("GET", "/api/robot/busy")
+            return bool(resp.get("busy", False))
+        except Exception:
+            return False
+
 
 class LatestFrameCamera:
     def __init__(self, camera_index: int, width: int, height: int, fps: int):
@@ -231,6 +238,10 @@ class LiveProcessor:
         self.init_detect_fail_streak = 0
         self.backend_status = "disabled" if self.backend is None else "idle"
         self.last_backend_error = None
+        # Robot busy tracking
+        self._robot_was_busy = False
+        self._robot_busy_cache = False
+        self._robot_busy_last_check = 0.0
 
     def start(self, camera: LatestFrameCamera):
         self._running = True
@@ -342,6 +353,18 @@ class LiveProcessor:
         if result.board_changed and result.uci:
             self._push_move_to_backend(result.uci)
 
+    def _check_robot_busy(self) -> bool:
+        """Visszaadja hogy a robot éppen mozog-e. Fél másodpercenként frissíti a cache-t."""
+        now = time.time()
+        if now - self._robot_busy_last_check < 0.5:
+            return self._robot_busy_cache
+        self._robot_busy_last_check = now
+        if self.backend is None:
+            self._robot_busy_cache = False
+        else:
+            self._robot_busy_cache = self.backend.is_robot_busy()
+        return self._robot_busy_cache
+
     def _worker_loop(self, camera: LatestFrameCamera):
         while self._running:
             frame, seq = camera.get_latest()
@@ -351,6 +374,24 @@ class LiveProcessor:
 
             if not self._should_process_seq(seq):
                 time.sleep(0.002)
+                continue
+
+            robot_busy = self._check_robot_busy()
+
+            # Ha a robot mozog: skip minden frame-et, ne zavarjuk össze a detektálást
+            if robot_busy:
+                self._robot_was_busy = True
+                with self._state_lock:
+                    self.backend_status = "robot-moving"
+                time.sleep(0.05)
+                continue
+
+            # Robot éppen befejezte a mozgást → tracker reset az új pozícióból
+            if self._robot_was_busy and not robot_busy:
+                self._robot_was_busy = False
+                print("Robot kész — tracker reset az új pozícióból.", flush=True)
+                self._reset_tracker()
+                time.sleep(1.0)  # 1 másodperc türelmi idő mielőtt újra detektálunk
                 continue
 
             t0 = time.time()

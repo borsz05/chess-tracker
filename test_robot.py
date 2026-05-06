@@ -29,8 +29,8 @@ DEMO_GRAVEYARD_STEP  = ( 40.0,    0.0)
 
 def _init_robot():
     print("Robot inicializálása (pymoveit2 + MoveIt2)...")
-    from robot.impl import RobotImpl
-    robot = RobotImpl()
+    from robot.impl import FrankaRobot
+    robot = FrankaRobot()
     print("Robot kész.\n")
     return robot
 

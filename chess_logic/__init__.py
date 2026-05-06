@@ -5,7 +5,7 @@ from .resolver import (
     resolve_move_from_occupancy,
 )
 from .stabilizer import StabilizerDecision, StateStabilizer
-from .types import MoveGuess, MoveRecord, OccupancyResolveResult
+from .move_types import MoveGuess, MoveRecord, OccupancyResolveResult
 
 __all__ = [
     "Board",

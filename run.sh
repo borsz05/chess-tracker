@@ -56,7 +56,7 @@ fi
 
 # Mindig a legfrissebb executor.py-t másoljuk be a containerbe
 echo "▶ executor.py frissítése a containerben..."
-docker cp "$CHESS_DIR/robot/executor.py" franka_ros2_humble:/ros2_ws/chess_executor.py
+docker cp "$CHESS_DIR/franka/chess_executor.py" franka_ros2_humble:/ros2_ws/chess_executor.py
 echo "▶ Container kész."
 
 # ── tmux session felépítése ──────────────────────────────────────────────────

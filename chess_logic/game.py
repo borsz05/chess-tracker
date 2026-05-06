@@ -4,7 +4,7 @@ import chess
 import chess.pgn
 
 from .resolver import chess_move_to_moveguess, resolve_move_from_occupancy
-from .types import MoveGuess, MoveRecord, OccupancyResolveResult
+from .move_types import MoveGuess, MoveRecord, OccupancyResolveResult
 
 
 class Board(chess.Board):

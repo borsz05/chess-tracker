@@ -29,7 +29,7 @@ from pathlib import Path
 # without a real robot.
 
 try:
-    from robot.impl import RobotImpl  # type: ignore[import]
+    from robot.impl import FrankaRobot as RobotImpl  # type: ignore[import]
 except ImportError:
     # Fallback stub — prompts the user to enter coordinates manually.
     from robot.interface import RobotInterface

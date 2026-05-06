@@ -4,7 +4,7 @@ from typing import Iterable
 
 import chess
 
-from .types import MoveGuess
+from .move_types import MoveGuess
 
 
 def coords_to_chess_square(row: int, col: int) -> int:
