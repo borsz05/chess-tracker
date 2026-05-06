@@ -1,5 +1,8 @@
+import logging
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineProfiler:
@@ -20,8 +23,8 @@ class PipelineProfiler:
         del self._active[name]
 
     def report(self):
-        print("\n---- Pipeline timing ----")
+        logger.info("---- Pipeline timing ----")
         for k in sorted(self.times.keys()):
             avg = self.times[k] / max(1, self.counts[k])
-            print(f"{k:20s}  avg={avg*1000:7.2f} ms   calls={self.counts[k]}")
-        print("-------------------------\n")
+            logger.info("%s  avg=%7.2f ms   calls=%s", f"{k:20s}", avg * 1000, self.counts[k])
+        logger.info("-------------------------")

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable
 
 import chess
 import chess.engine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -112,20 +115,24 @@ class EngineAnalysisService:
 
             snapshot, on_ready = item
 
-            if snapshot.result != "*":
-                lines = [{
-                    "score": 0.0,
-                    "line_san": f"Game over: {snapshot.result}",
-                    "pv_uci": [],
-                    "mate_in": None,
-                }]
-            else:
-                ch_board = chess.Board(snapshot.fen)
-                lines = self.analyse_top_lines(
-                    ch_board,
-                    depth=snapshot.depth,
-                    multipv=snapshot.multipv,
-                )
+            try:
+                if snapshot.result != "*":
+                    lines = [{
+                        "score": 0.0,
+                        "line_san": f"Game over: {snapshot.result}",
+                        "pv_uci": [],
+                        "mate_in": None,
+                    }]
+                else:
+                    ch_board = chess.Board(snapshot.fen)
+                    lines = self.analyse_top_lines(
+                        ch_board,
+                        depth=snapshot.depth,
+                        multipv=snapshot.multipv,
+                    )
+            except Exception as exc:
+                logger.error("Analysis failed: %s", exc)
+                lines = []
 
             on_ready(snapshot, lines)
             self.analysis_queue.task_done()

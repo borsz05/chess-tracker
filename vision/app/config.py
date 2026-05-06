@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from chess_logic import StateStabilizer
+from vision.pipeline.stabilizer import StateStabilizer
 
 
 DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "resnet18_best_topdown.pt"
@@ -13,7 +12,7 @@ DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights
 @dataclass
 class AppConfig:
     start_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-    weights_path: Optional[str] = str(DEFAULT_WEIGHTS_PATH)
+    weights_path: str | None = str(DEFAULT_WEIGHTS_PATH)
 
     inner_pad_ratio: float = 0.06
     context: float = 0.50

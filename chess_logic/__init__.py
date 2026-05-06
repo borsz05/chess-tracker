@@ -4,7 +4,6 @@ from .resolver import (
     chess_move_to_moveguess,
     resolve_move_from_occupancy,
 )
-from .stabilizer import StabilizerDecision, StateStabilizer
 from .move_types import MoveGuess, MoveRecord, OccupancyResolveResult
 
 __all__ = [
@@ -16,6 +15,4 @@ __all__ = [
     "board_to_occupancy",
     "chess_move_to_moveguess",
     "resolve_move_from_occupancy",
-    "StateStabilizer",
-    "StabilizerDecision",
 ]

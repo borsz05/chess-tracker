@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -15,7 +16,10 @@ from vision.app.config import AppConfig
 from vision.app.debug_draw import build_overlay_lines, draw_lines, draw_square_class_dots
 from vision.pipeline.tracker import ChessVisionTracker
 
+logger = logging.getLogger(__name__)
+
 _CALIBRATION_FILE = Path(__file__).resolve().parents[2] / "robot" / "calibration.json"
+_CAMERA_FAIL_LIMIT = 50
 
 
 def _check_calibration_gate() -> None:
@@ -28,21 +32,20 @@ def _check_calibration_gate() -> None:
     if "--no-robot" in sys.argv:
         return
     if not _CALIBRATION_FILE.exists():
-        print(
+        logger.error(
             "\nERROR: robot/calibration.json not found.\n"
             "Run calibration first:\n"
             "    python -m robot.calibrate\n"
             "Then ensure the board is clear and restart the vision pipeline.\n"
-            "To run without a robot (vision-only), pass --no-robot.\n",
-            file=sys.stderr,
+            "To run without a robot (vision-only), pass --no-robot.\n"
         )
         sys.exit(1)
-    print(f"Calibration file found: {_CALIBRATION_FILE}")
+    logger.info("Calibration file found: %s", _CALIBRATION_FILE)
     ans = input(
         "Calibration complete and board clear of hands/robot? [Y/n]: "
     ).strip().lower()
     if ans not in ("", "y"):
-        print("Aborting — re-run after clearing the board.")
+        logger.info("Aborting — re-run after clearing the board.")
         sys.exit(0)
 
 
@@ -64,7 +67,7 @@ class LiveConfig:
     auto_reset_on_init_detect_fail_streak: int = 60
 
     backend_enabled: bool = True
-    backend_origin: str = "http://127.0.0.1:8001"
+    backend_origin: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
     backend_timeout_s: float = 2.5
     reset_backend_on_start: bool = True
     reset_backend_on_manual_tracker_reset: bool = True
@@ -151,7 +154,7 @@ class LatestFrameCamera:
         for backend in cls._camera_backends():
             cap = cv2.VideoCapture(camera_index, backend)
             if cap.isOpened():
-                print(f"Kamera megnyitva index={camera_index}, backend={backend}")
+                logger.info("Kamera megnyitva index=%s, backend=%s", camera_index, backend)
                 return cap
             cap.release()
 
@@ -164,12 +167,21 @@ class LatestFrameCamera:
         return self
 
     def _reader_loop(self):
+        consecutive_failures = 0
         while self._running:
             ret, frame = self.cap.read()
             if not ret:
-                time.sleep(0.01)
+                consecutive_failures += 1
+                if consecutive_failures >= _CAMERA_FAIL_LIMIT:
+                    with self._lock:
+                        self._latest_frame = None
+                    logger.error("Camera disconnected — waiting for reconnect")
+                    consecutive_failures = 0
+                    time.sleep(1.0)
+                else:
+                    time.sleep(0.01)
                 continue
-
+            consecutive_failures = 0
             with self._lock:
                 self._latest_seq += 1
                 self._latest_frame = frame
@@ -348,7 +360,10 @@ class LiveProcessor:
 
     def _handle_successful_process(self, result, seq: int, move_count: int):
         if result.board_changed and self.live_cfg.print_accepts:
-            print(f"Elfogadott lépés: {result.san} | mód: {result.mode} | feldolgozott seq: {seq} | lépésszám: {move_count}")
+            logger.info(
+                "Elfogadott lépés: %s | mód: %s | feldolgozott seq: %s | lépésszám: %s",
+                result.san, result.mode, seq, move_count,
+            )
 
         if result.board_changed and result.uci:
             self._push_move_to_backend(result.uci)
@@ -389,7 +404,7 @@ class LiveProcessor:
             # Robot éppen befejezte a mozgást → tracker reset az új pozícióból
             if self._robot_was_busy and not robot_busy:
                 self._robot_was_busy = False
-                print("Robot kész — tracker reset az új pozícióból.", flush=True)
+                logger.info("Robot kész — tracker reset az új pozícióból.")
                 self._reset_tracker()
                 time.sleep(1.0)  # 1 másodperc türelmi idő mielőtt újra detektálunk
                 continue
@@ -453,6 +468,11 @@ def fit_preview(frame, max_width: int):
 
 
 def main():
+    logging.basicConfig(
+        stream=sys.stdout, level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s — %(message)s",
+        datefmt="%H:%M:%S",
+    )
     _check_calibration_gate()
 
     app_cfg = AppConfig()
@@ -508,7 +528,7 @@ def main():
                 break
 
             if key == ord("r"):
-                print("Tracker reset kérve.")
+                logger.info("Tracker reset kérve.")
                 processor.request_reset(sync_backend=live_cfg.reset_backend_on_manual_tracker_reset)
     finally:
         processor.stop()

@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
-from backend.api.schemas import MoveRequest
 from backend.core.state import BackendState
 from backend.services.ws_service import WebSocketHub
 
 router = APIRouter(prefix="/api", tags=["api"])
+
+
+class MoveRequest(BaseModel):
+    uci: str
 
 
 def get_backend_state(request: Request) -> BackendState:
@@ -48,7 +52,9 @@ def post_move(request: Request, req: MoveRequest):
 @router.get("/robot/busy")
 def get_robot_busy(request: Request):
     state = get_backend_state(request)
-    return {"busy": state.robot_busy}
+    with state._lock:
+        busy = state.robot_busy
+    return {"busy": busy}
 
 
 @router.get("/robot/best-move")

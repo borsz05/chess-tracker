@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -7,8 +8,10 @@ from typing import Callable, Optional
 import chess
 
 from chess_logic import Game
+from backend.core.config import Settings
 from backend.services.engine_service import AnalysisSnapshot, EngineAnalysisService
-from backend.services.move_payload import best_move_payload_from_top_lines
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -22,7 +25,7 @@ class BackendStateSettings:
 
 
 class BackendState:
-    def __init__(self, settings):
+    def __init__(self, settings: Settings):
         self.settings = BackendStateSettings(
             start_fen=settings.start_fen,
             stockfish_path=settings.stockfish_path,
@@ -32,6 +35,7 @@ class BackendState:
             robot_color=settings.robot_color,
         )
 
+        # All BackendState mutations must be performed under this lock.
         self._lock = threading.Lock()
         self._state_notifier: Optional[Callable[[dict], None]] = None
 
@@ -54,10 +58,10 @@ class BackendState:
         try:
             from backend.services.robot_exec_service import RobotExecutionService
             self.robot_service = RobotExecutionService()
-            print("[Robot] Kapcsolódva, kész.", flush=True)
+            logger.info("[Robot] Kapcsolódva, kész.")
         except Exception as e:
             self.robot_service = None
-            print(f"[Robot] Nem elérhető – vision-only módban fut. ({e})", flush=True)
+            logger.warning("[Robot] Nem elérhető – vision-only módban fut. (%s)", e)
 
     # ------------------------------------------------------------------
     # Notifier
@@ -115,11 +119,6 @@ class BackendState:
             if same_position:
                 self.game.last_top_lines = lines
 
-                # Meghatározzuk hogy a robot játsszon-e:
-                # - van robot service
-                # - a robot színe következik
-                # - a játék még nem ért véget
-                # - nincs már folyamatban robot mozgás
                 robot_turn = (
                     (self.settings.robot_color == "black" and self.game.board.turn == chess.BLACK)
                     or
@@ -133,7 +132,6 @@ class BackendState:
                     and bool(lines)
                 )
                 if should_robot_play:
-                    # Board snapshot a lépés ELŐTTI állapotról (ez kell a build_move_descriptor-nak)
                     board_snap = self.game.board.copy()
 
             self.game.analysis_pending = False
@@ -171,14 +169,12 @@ class BackendState:
         with self._lock:
             self.robot_busy = True
         self._emit_state_changed()
-        print(f"[Robot] Lépés indítása: {uci}", flush=True)
+        logger.info("[Robot] Lépés indítása: %s", uci)
 
         try:
-            # Ez blokkolja a szálat amíg a robot fizikailag meg nem csinálja (~10-30 mp)
             self.robot_service.execute(uci, board_before)
-            print(f"[Robot] Lépés kész: {uci}", flush=True)
+            logger.info("[Robot] Lépés kész: %s", uci)
 
-            # Alkalmazza a lépést a backend játékállapotára
             with self._lock:
                 applied = self.game.apply_uci(uci)
 
@@ -186,16 +182,16 @@ class BackendState:
                 self.schedule_analysis()
                 self._emit_state_changed()
             else:
-                print(f"[Robot] Figyelmeztetés: {uci} illegális volt a backendben", flush=True)
+                logger.warning("[Robot] Figyelmeztetés: %s illegális volt a backendben", uci)
 
         except Exception as e:
-            print(f"[Robot] Hiba a lépés közben: {e}", flush=True)
+            logger.error("[Robot] Hiba a lépés közben: %s", e)
 
         finally:
             with self._lock:
                 self.robot_busy = False
             self._emit_state_changed()
-            print("[Robot] Kész, vision folytatódhat.", flush=True)
+            logger.info("[Robot] Kész, vision folytatódhat.")
 
     # ------------------------------------------------------------------
     # Public API
@@ -248,7 +244,17 @@ class BackendState:
             top_lines = self.game.last_top_lines
             pending = self.game.analysis_pending
 
-        payload = best_move_payload_from_top_lines(top_lines)
+        payload = None
+        if top_lines:
+            first = top_lines[0]
+            pv_uci = first.get("pv_uci") or []
+            if pv_uci:
+                payload = {
+                    "uci": pv_uci[0],
+                    "score": first.get("score"),
+                    "mate_in": first.get("mate_in"),
+                    "line_san": first.get("line_san"),
+                }
 
         return {
             "analysis_pending": pending,

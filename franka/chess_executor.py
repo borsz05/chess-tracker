@@ -6,7 +6,7 @@ Indítás a containerben (a run.sh csinálja automatikusan):
     source /ros2_ws/install/setup.bash
     python3 /ros2_ws/src/chess_executor.py
 
-HTTP API (port 8001):
+HTTP API (port 8002):
     GET  /health          → {"ok": true}
     GET  /position        → {"x": mm, "y": mm, "z": mm}
     POST /execute         → {"descriptor": {...}}  →  {"ok": true} vagy {"error": "..."}

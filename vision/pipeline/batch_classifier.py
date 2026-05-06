@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
 
 import cv2
 import numpy as np
@@ -12,7 +11,7 @@ from vision.models.occupancy_color_model import OccupancyColorModel
 
 LabelArray = np.ndarray   # shape: (8, 8), dtype: int32
 ConfArray = np.ndarray    # shape: (8, 8), dtype: float32
-BBoxGrid = List[List[Tuple[int, int, int, int]]]
+BBoxGrid = list[list[tuple[int, int, int, int]]]
 
 
 @dataclass
@@ -23,7 +22,7 @@ class BatchClassificationResult:
 
 def crop_with_context(
     img: np.ndarray,
-    bbox: Tuple[int, int, int, int],
+    bbox: tuple[int, int, int, int],
     *,
     context: float = 0.50,
 ) -> np.ndarray:
@@ -128,7 +127,7 @@ def classify_warp_squares_batch(
 def classify_frame_batch(
     frame_bgr: np.ndarray,
     det,
-    warp_size: Tuple[int, int],
+    warp_size: tuple[int, int],
     model: OccupancyColorModel,
     *,
     context: float = 0.50,
@@ -155,13 +154,13 @@ def classify_frame_batch(
 
 @torch.no_grad()
 def classify_selected_squares(
-    img_warp,
-    bbox_grid,
-    squares,
-    model,
+    img_warp: np.ndarray,
+    bbox_grid: BBoxGrid,
+    squares: list[tuple[int, int]],
+    model: OccupancyColorModel,
     *,
     context: float = 0.50,
-):
+) -> dict[tuple[int, int], tuple[int, float]]:
     """
     Csak bizonyos mezőket klasszifikál.
     squares: [(r,c),...]

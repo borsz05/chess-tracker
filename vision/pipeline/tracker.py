@@ -12,7 +12,6 @@ from chess_logic import Board, Game, board_to_occupancy
 from vision.app.config import AppConfig, make_stabilizer
 from vision.pipeline.batch_classifier import BatchClassificationResult, classify_frame_batch, classify_selected_squares
 from vision.pipeline.board_detector import detect_board_on_frame
-from vision.pipeline.square_diff import compute_square_diffs
 
 
 @dataclass
@@ -46,6 +45,23 @@ def disturbance_score(prev_occ: np.ndarray | None, curr_occ: np.ndarray | None) 
     return occ_distance(prev_occ, curr_occ)
 
 
+def compute_square_diffs(prev_warp, curr_warp, bbox_grid):
+    diffs = []
+    for r in range(8):
+        for c in range(8):
+            x0, y0, x1, y1 = bbox_grid[r][c]
+            prev_sq = prev_warp[y0:y1, x0:x1]
+            curr_sq = curr_warp[y0:y1, x0:x1]
+            if prev_sq.size == 0 or curr_sq.size == 0:
+                diff = 0
+            else:
+                d = np.abs(prev_sq.astype(np.int16) - curr_sq.astype(np.int16))
+                diff = float(np.mean(d))
+            diffs.append((diff, r, c))
+    diffs.sort(reverse=True)
+    return diffs
+
+
 def weighted_vote_occ(label_grids: Iterable[np.ndarray], conf_grids: Iterable[np.ndarray]):
     label_stack = np.stack(list(label_grids), axis=0).astype(np.int32)
     conf_stack = np.stack(list(conf_grids), axis=0).astype(np.float32)
@@ -63,12 +79,12 @@ def weighted_vote_occ(label_grids: Iterable[np.ndarray], conf_grids: Iterable[np
 
 
 class ChessVisionTracker:
-    def __init__(self, cfg: AppConfig):
+    def __init__(self, cfg: AppConfig, model=None):
         self.cfg = cfg
 
         self.game = Game(cfg.start_fen)
         self.stabilizer = make_stabilizer()
-        self.occ_model = self._load_model()
+        self.occ_model = model if model is not None else self._load_model()
 
         self.expected_start_occ = np.asarray(
             board_to_occupancy(Board(cfg.start_fen)),

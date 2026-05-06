@@ -34,7 +34,7 @@ def _fen_key4(board: chess.Board) -> str:
     return " ".join(parts[:4])
 
 
-def _as_chess_board(obj) -> chess.Board:
+def _as_chess_board(obj: chess.Board | str) -> chess.Board:
     if isinstance(obj, chess.Board):
         return obj.copy()
 
@@ -44,7 +44,7 @@ def _as_chess_board(obj) -> chess.Board:
     raise TypeError(f"Nem támogatott board típus: {type(obj)!r}")
 
 
-def board_to_occupancy(board) -> list[list[int]]:
+def board_to_occupancy(board: chess.Board | str) -> list[list[int]]:
     ch_board = _as_chess_board(board)
     occ = [[0] * 8 for _ in range(8)]
 

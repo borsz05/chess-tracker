@@ -4,10 +4,10 @@ import copy
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, List, Optional, Tuple
 
-OccGrid = List[List[int]]
-ConfGrid = List[List[float]]
+
+OccGrid = list[list[int]]
+ConfGrid = list[list[float]]
 
 
 def _grid_copy(g: OccGrid) -> OccGrid:
@@ -23,8 +23,8 @@ def _hamming_occ(a: OccGrid, b: OccGrid) -> int:
     return diff
 
 
-def _changed_cells(old: OccGrid, new: OccGrid) -> List[Tuple[int, int]]:
-    out: List[Tuple[int, int]] = []
+def _changed_cells(old: OccGrid, new: OccGrid) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
     for r in range(8):
         for c in range(8):
             if old[r][c] != new[r][c]:
@@ -32,7 +32,7 @@ def _changed_cells(old: OccGrid, new: OccGrid) -> List[Tuple[int, int]]:
     return out
 
 
-def _avg_conf_on_cells(confs: ConfGrid, cells: List[Tuple[int, int]]) -> float:
+def _avg_conf_on_cells(confs: ConfGrid, cells: list[tuple[int, int]]) -> float:
     if not cells:
         return 1.0
 
@@ -52,7 +52,7 @@ def _mean_conf(confs: ConfGrid) -> float:
 
 @dataclass(slots=True)
 class StabilizerDecision:
-    emit_occ: Optional[OccGrid]
+    emit_occ: OccGrid | None
     reason: str
     mode: str
 
@@ -94,11 +94,11 @@ class StateStabilizer:
         self.hold_min_duration_s = float(hold_min_duration_s)
         self.recovery_stable_frames = int(recovery_stable_frames)
 
-        self._occ_buf: Deque[OccGrid] = deque(maxlen=self.buffer_size)
-        self._conf_buf: Deque[ConfGrid] = deque(maxlen=self.buffer_size)
+        self._occ_buf: deque[OccGrid] = deque(maxlen=self.buffer_size)
+        self._conf_buf: deque[ConfGrid] = deque(maxlen=self.buffer_size)
 
-        self._last_emitted: Optional[OccGrid] = None
-        self._candidate: Optional[OccGrid] = None
+        self._last_emitted: OccGrid | None = None
+        self._candidate: OccGrid | None = None
         self._candidate_run = 0
 
         self._mode: str = "WARMUP"
@@ -111,7 +111,7 @@ class StateStabilizer:
         return self._mode
 
     @property
-    def last_emitted(self) -> Optional[OccGrid]:
+    def last_emitted(self) -> OccGrid | None:
         return self._last_emitted
 
     def reset(self) -> None:
@@ -149,10 +149,10 @@ class StateStabilizer:
 
     def update(
         self,
-        occ: Optional[OccGrid],
-        confs: Optional[ConfGrid],
+        occ: OccGrid | None,
+        confs: ConfGrid | None,
         *,
-        now_s: Optional[float] = None,
+        now_s: float | None = None,
     ) -> StabilizerDecision:
         now = time.time() if now_s is None else float(now_s)
 
