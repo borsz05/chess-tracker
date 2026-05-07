@@ -57,7 +57,12 @@ def _square_to_col_row(square: str) -> tuple[int, int]:
 class Calibration:
     """Holds A1 and H8 physical coordinates and derives all 64 squares."""
 
-    def __init__(self, a1: tuple[float, float], h8: tuple[float, float]):
+    def __init__(
+        self,
+        a1: tuple[float, float],
+        h8: tuple[float, float],
+        promotion_queen_xy: tuple[float, float] | None = None,
+    ):
         """
         Parameters
         ----------
@@ -71,6 +76,7 @@ class Calibration:
         """
         self.a1 = a1
         self.h8 = h8
+        self._promotion_queen_xy = promotion_queen_xy
 
         dx = h8[0] - a1[0]
         dy = h8[1] - a1[1]
@@ -88,6 +94,16 @@ class Calibration:
 
         # rank_step = rotate90CCW(file_step): (fx,fy) → (−fy, fx)
         self._step_rank = (-fy, fx)
+
+    @property
+    def promotion_queen_xy(self) -> tuple[float, float]:
+        """Physical position of the spare queen used for pawn promotion."""
+        if self._promotion_queen_xy is None:
+            raise RuntimeError(
+                "promotion_queen_xy not found in calibration.json — "
+                "re-run  python -m robot.calibrate  to teach the promotion queen position."
+            )
+        return self._promotion_queen_xy
 
     # ------------------------------------------------------------------
     # Core computation
@@ -127,7 +143,21 @@ class Calibration:
         data = json.loads(path.read_text())
         a1 = tuple(data["a1"])
         h8 = tuple(data["h8"])
-        return cls(a1=a1, h8=h8)  # type: ignore[arg-type]
+        pq = data.get("promotion_queen_xy")
+        promotion_queen_xy = tuple(pq) if pq is not None else None
+        return cls(a1=a1, h8=h8, promotion_queen_xy=promotion_queen_xy)  # type: ignore[arg-type]
+
+    @classmethod
+    def save_promotion_queen_xy(
+        cls, xy: tuple[float, float], path: Path = CALIBRATION_FILE
+    ) -> None:
+        """Merge promotion_queen_xy into the existing calibration.json."""
+        data: dict[str, Any] = {}
+        if path.exists():
+            data = json.loads(path.read_text())
+        data["promotion_queen_xy"] = list(xy)
+        path.write_text(json.dumps(data, indent=2))
+        print(f"  Promotion queen position saved to {path}")
 
     def __repr__(self) -> str:
         return f"Calibration(a1={self.a1}, h8={self.h8})"

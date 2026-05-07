@@ -25,7 +25,8 @@ from robot.calibration import CALIBRATION_FILE
 # Override by running the calibration script with graveyard teaching.
 _DEFAULT_START = (400.0, 0.0)   # mm, example — replace via calibration
 _DEFAULT_STEP  = (30.0, 0.0)    # 30 mm between slots along X axis
-_MAX_SLOTS = 16                  # 8 white + 8 black captures max
+
+MAX_GRAVEYARD_SLOTS = 15  # robot plays Black; only White pieces are captured (king excluded)
 
 
 class Graveyard:
@@ -45,8 +46,11 @@ class Graveyard:
     def next_slot(self) -> tuple[float, float]:
         """Return the (x, y) position for the next captured piece and
         advance the counter.  Raises RuntimeError when the zone is full."""
-        if self._next_index >= _MAX_SLOTS:
-            raise RuntimeError("Graveyard is full — no more capture slots available")
+        if self._next_index >= MAX_GRAVEYARD_SLOTS:
+            raise RuntimeError(
+                f"Graveyard full: all {MAX_GRAVEYARD_SLOTS} slots used. "
+                "This should never happen in a legal game."
+            )
         x = self.start[0] + self._next_index * self.step[0]
         y = self.start[1] + self._next_index * self.step[1]
         self._next_index += 1

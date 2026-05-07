@@ -62,6 +62,22 @@ def _teach_corner(robot: RobotImpl, label: str) -> tuple[float, float]:
     return (x, y)
 
 
+def _teach_promotion_square(robot: RobotImpl) -> tuple[float, float] | None:
+    print(f"\n{'─' * 60}")
+    print("  Promotion queen calibration (optional).")
+    ans = input("  Calibrate promotion queen position? [y/N]: ").strip().lower()
+    if ans != "y":
+        print("  Skipping — promotion moves will fail without this.")
+        return None
+
+    print("  Place a spare queen beside the board at its storage position.")
+    print("  Move the robot end-effector directly over it.")
+    input("  Press ENTER when ready… ")
+    x, y, _ = robot.get_position()
+    print(f"  Promotion queen: x={x:.2f}  y={y:.2f}")
+    return (x, y)
+
+
 def _teach_graveyard(robot: RobotImpl) -> tuple[tuple[float, float], tuple[float, float]]:
     print(f"\n{'─' * 60}")
     print("  Graveyard calibration (optional).")
@@ -112,6 +128,11 @@ def main() -> None:
     if g_start is not None:
         graveyard = Graveyard(start=g_start, step=g_step)
         graveyard.save_to_calibration_file(CALIBRATION_FILE)
+
+    # Optional promotion queen
+    pq_xy = _teach_promotion_square(robot)
+    if pq_xy is not None:
+        Calibration.save_promotion_queen_xy(pq_xy, CALIBRATION_FILE)
 
     print(f"\n{'=' * 60}")
     print(f"  Calibration complete.  File: {CALIBRATION_FILE}")

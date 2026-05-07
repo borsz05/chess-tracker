@@ -4,11 +4,13 @@ structured dict that tells the robot exactly what physical actions to take.
 
 Supported move types
 --------------------
-  "simple"   — move a piece from one square to another
-  "capture"  — move a piece and remove the captured piece to the graveyard
-  "castling" — two separate piece moves (king then rook)
-  "en_passant" — like capture but the captured pawn is on a different square
-                 than the destination
+  "simple"    — move a piece from one square to another
+  "capture"   — move a piece and remove the captured piece to the graveyard
+  "castling"  — two separate piece moves (king then rook)
+  "en_passant"  — like capture but the captured pawn is on a different square
+                  than the destination
+  "promotion" — pawn reaches back rank: pawn goes to graveyard, spare queen
+                is picked up from beside the board and placed on the target square
 
 The descriptor always contains:
   type          : str                     one of the types above
@@ -69,14 +71,24 @@ def build_move_descriptor(
     piece_to_xy   = calibration.square_to_xy(to_sq_name)
 
     descriptor: dict[str, Any] = {
-        "uci":           uci,
-        "piece_from_xy": piece_from_xy,
-        "piece_to_xy":   piece_to_xy,
-        "captured_xy":   None,
-        "graveyard_xy":  None,
-        "castling_rook": None,
-        "promotion":     chess.piece_name(move.promotion) if move.promotion else None,
+        "uci":                 uci,
+        "piece_from_xy":       piece_from_xy,
+        "piece_to_xy":         piece_to_xy,
+        "captured_xy":         None,
+        "graveyard_xy":        None,
+        "castling_rook":       None,
+        "promotion_target_xy": None,
+        "pawn_graveyard_xy":   None,
+        "promotion":           chess.piece_name(move.promotion) if move.promotion else None,
     }
+
+    # ── Promotion ─────────────────────────────────────────────────────
+    if move.promotion is not None:
+        descriptor["type"] = "promotion"
+        descriptor["piece_to_xy"] = calibration.promotion_queen_xy
+        descriptor["promotion_target_xy"] = calibration.square_to_xy(to_sq_name)
+        descriptor["pawn_graveyard_xy"] = graveyard.next_slot()
+        return descriptor
 
     # ── Castling ──────────────────────────────────────────────────────
     if board.is_castling(move):

@@ -1,3 +1,7 @@
+# Based on https://github.com/Elucidation/ChessboardDetect
+# Copyright (c) 2016 Sam — MIT License
+# Adapted for Python 3 and trimmed to relevant detection pipeline.
+
 import cv2
 import numpy as np
 
