@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib import error, request
 
 import cv2
+import numpy as np
 
 from vision.app.config import AppConfig
 from vision.app.debug_draw import build_overlay_lines, draw_lines, draw_square_class_dots
@@ -51,9 +52,7 @@ def _check_calibration_gate() -> None:
 
 @dataclass
 class LiveConfig:
-    camera_index: int = 0
-    camera_width: int = 1280
-    camera_height: int = 720
+    executor_url: str = os.getenv("EXECUTOR_URL", "http://127.0.0.1:8002")
     camera_fps: int = 30
 
     process_every_nth_captured_frame: int = 6
@@ -121,16 +120,14 @@ class BackendSyncClient:
             return False
 
 
-class LatestFrameCamera:
-    def __init__(self, camera_index: int, width: int, height: int, fps: int):
-        self.cap = self._open_camera(camera_index)
-        if not self.cap.isOpened():
-            raise RuntimeError("Nem sikerült megnyitni a kamerát.")
+class RemoteCamera:
+    """Kameraképeket az executor /camera/frame HTTP endpointjáról kéri le.
+    Wrist kamera esetén ezt használd LatestFrameCamera helyett.
+    """
 
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, fps)
+    def __init__(self, executor_url: str, fps: int = 30):
+        self._url = executor_url.rstrip("/") + "/camera/frame"
+        self._interval = 1.0 / max(fps, 1)
 
         self._lock = threading.Lock()
         self._latest_frame = None
@@ -143,23 +140,6 @@ class LatestFrameCamera:
         self._fps_last_t = time.time()
         self._capture_fps = 0.0
 
-    @staticmethod
-    def _camera_backends():
-        if os.name == "nt":
-            return [cv2.CAP_MSMF, cv2.CAP_DSHOW, cv2.CAP_ANY]
-        return [cv2.CAP_ANY]
-
-    @classmethod
-    def _open_camera(cls, camera_index: int):
-        for backend in cls._camera_backends():
-            cap = cv2.VideoCapture(camera_index, backend)
-            if cap.isOpened():
-                logger.info("Kamera megnyitva index=%s, backend=%s", camera_index, backend)
-                return cap
-            cap.release()
-
-        return cv2.VideoCapture(camera_index)
-
     def start(self):
         self._running = True
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
@@ -167,33 +147,28 @@ class LatestFrameCamera:
         return self
 
     def _reader_loop(self):
-        consecutive_failures = 0
         while self._running:
-            ret, frame = self.cap.read()
-            if not ret:
-                consecutive_failures += 1
-                if consecutive_failures >= _CAMERA_FAIL_LIMIT:
+            try:
+                with request.urlopen(self._url, timeout=2) as resp:
+                    data = resp.read()
+                arr = np.frombuffer(data, dtype=np.uint8)
+                frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame is not None:
                     with self._lock:
-                        self._latest_frame = None
-                    logger.error("Camera disconnected — waiting for reconnect")
-                    consecutive_failures = 0
-                    time.sleep(1.0)
-                else:
-                    time.sleep(0.01)
+                        self._latest_seq += 1
+                        self._latest_frame = frame
+                    with self._fps_lock:
+                        self._fps_counter += 1
+                        now = time.time()
+                        dt = now - self._fps_last_t
+                        if dt >= 1.0:
+                            self._capture_fps = self._fps_counter / dt
+                            self._fps_counter = 0
+                            self._fps_last_t = now
+            except Exception:
+                time.sleep(0.1)
                 continue
-            consecutive_failures = 0
-            with self._lock:
-                self._latest_seq += 1
-                self._latest_frame = frame
-
-            with self._fps_lock:
-                self._fps_counter += 1
-                now = time.time()
-                dt = now - self._fps_last_t
-                if dt >= 1.0:
-                    self._capture_fps = self._fps_counter / dt
-                    self._fps_counter = 0
-                    self._fps_last_t = now
+            time.sleep(self._interval)
 
     def get_latest(self):
         with self._lock:
@@ -209,7 +184,17 @@ class LatestFrameCamera:
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=1.0)
-        self.cap.release()
+
+
+# ── LatestFrameCamera (USB kamera — oldalról rögzített kamera esetén) ─────────
+# Wrist kamera használatakor ez nem szükséges. Ha visszaváltasz az oldalsó
+# USB kamerára, cseréld vissza RemoteCamera-t erre az osztályra, és állítsd
+# vissza a LiveConfig camera_index / camera_width / camera_height / camera_fps
+# paramétereit.
+#
+# class LatestFrameCamera:
+#     def __init__(self, camera_index, width, height, fps): ...
+#     (teljes implementáció a git history-ban: git log --all -- vision/app/run_live.py)
 
 
 class LiveProcessor:
@@ -478,10 +463,8 @@ def main():
     app_cfg = AppConfig()
     live_cfg = LiveConfig()
 
-    camera = LatestFrameCamera(
-        camera_index=live_cfg.camera_index,
-        width=live_cfg.camera_width,
-        height=live_cfg.camera_height,
+    camera = RemoteCamera(
+        executor_url=live_cfg.executor_url,
         fps=live_cfg.camera_fps,
     ).start()
 

@@ -17,6 +17,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./limits.conf:/etc/security/limits.conf
       - /dev:/dev
+      - ../robot:/robot:ro                         # kalibráció olvasásához
     environment:
       QT_X11_NO_MITSHM: 1
       DISPLAY: $DISPLAY

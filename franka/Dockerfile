@@ -73,6 +73,7 @@ RUN sudo apt-get update \
         ros-humble-teleop-twist-keyboard \
         ros-humble-joy \
         ros-humble-teleop-twist-joy \
+        python3-opencv \
 
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*

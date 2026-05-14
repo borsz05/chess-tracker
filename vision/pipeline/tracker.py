@@ -30,9 +30,8 @@ class FrameProcessResult:
 
 
 def raw_to_standard(grid: np.ndarray) -> np.ndarray:
-    # Camera always: top-left = A1, bottom-right = H8
-    grid = np.rot90(grid, 1).copy()
-    return np.fliplr(grid).copy()
+    # Wrist camera: top-right = A1, bottom-left = H8  →  vertical flip only
+    return np.flipud(grid).copy()
 
 
 def occ_distance(a: np.ndarray, b: np.ndarray) -> int:
