@@ -64,7 +64,7 @@ export function initBoard(onDropHandler) {
     snapbackSpeed: 150,
     snapSpeed: 100,
     pieceTheme: (piece) =>
-      `assets/chessboardjs-1.0.0/img/chesspieces/chesscom_icy/${piece.toLowerCase()}.png`,
+      `assets/chessboardjs-1.0.0/img/chesspieces/chesscom_real/${piece.toLowerCase()}.png`,
     onDrop: (source, target) => onUserDrop(source, target, onDropHandler),
   });
 }
