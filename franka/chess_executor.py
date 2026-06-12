@@ -17,6 +17,8 @@ HTTP API (port 8002):
 from __future__ import annotations
 
 import json
+import math
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -53,20 +55,50 @@ Z_PICK    = 0.04   # metres — approach height for picking up a piece
 Z_PLACE   = 0.03   # metres — approach height for placing a piece
 ARC_WAYPOINTS = 8  # number of intermediate points along the arc
 
+# Piece-specific grasp heights (metres above table).
+# Values can be overridden via "piece_grasp_heights" in calibration.json.
+PIECE_GRASP_HEIGHT: dict[str, float] = {
+    "P": 0.020,   # gyalog ~33-40mm → nyak ~20mm
+    "R": 0.025,   # bástya ~45mm → nyak ~25mm
+    "N": 0.030,   # huszár ~55mm → nyak ~30mm
+    "B": 0.035,   # futó ~65mm → nyak ~35mm
+    "Q": 0.040,   # vezér ~80mm → nyak ~40mm
+    "K": 0.045,   # király ~90mm → nyak ~45mm
+}
+
 VELOCITY     = 0.3
 ACCELERATION = 0.3
 
 PORT = 8002
 
+# Calibration file path (same directory as this script inside the container).
+_CAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+
+def _load_piece_grasp_heights() -> None:
+    """Override PIECE_GRASP_HEIGHT from calibration.json if 'piece_grasp_heights' key present."""
+    if not os.path.exists(_CAL_PATH):
+        return
+    try:
+        data = json.loads(open(_CAL_PATH).read())
+        overrides = data.get("piece_grasp_heights")
+        if overrides:
+            PIECE_GRASP_HEIGHT.update({k.upper(): float(v) for k, v in overrides.items()})
+            print(f"[chess_executor] piece_grasp_heights betöltve: {overrides}", flush=True)
+    except Exception as e:
+        print(f"[chess_executor] piece_grasp_heights betöltési hiba (ignorálva): {e}", flush=True)
+
+
 # ── Globális robot objektumok ────────────────────────────────────────────────
 _node:    Node | None    = None
 _moveit2: MoveIt2 | None = None
 _tf_buf:  Buffer | None  = None
+_gripper_move_client:  ActionClient | None = None
+_gripper_grasp_client: ActionClient | None = None
 _lock = threading.Lock()
 
 
 def _init_robot() -> None:
-    global _node, _moveit2, _tf_buf
+    global _node, _moveit2, _tf_buf, _gripper_move_client, _gripper_grasp_client
 
     rclpy.init()
     _node = Node("chess_executor")
@@ -88,6 +120,11 @@ def _init_robot() -> None:
     _tf_buf = Buffer()
     TransformListener(_tf_buf, _node)
 
+    _gripper_move_client  = ActionClient(_node, GripperMove, "/fr3_gripper/move")
+    _gripper_grasp_client = ActionClient(_node, Grasp,       "/fr3_gripper/grasp")
+
+    _load_piece_grasp_heights()
+
     time.sleep(1.5)
     print(f"[chess_executor] Robot kész. HTTP szerver: port {PORT}", flush=True)
 
@@ -101,35 +138,53 @@ def _get_position() -> tuple[float, float, float]:
 # ── Gripper ──────────────────────────────────────────────────────────────────
 
 def _gripper_open() -> None:
-    client = ActionClient(_node, GripperMove, "/fr3_gripper/move")
     goal = GripperMove.Goal(width=GRIPPER_OPEN_WIDTH, speed=0.1)
-    future = client.send_goal_async(goal)
+    future = _gripper_move_client.send_goal_async(goal)
     rclpy.spin_until_future_complete(_node, future)
-    future.result().get_result_async()
+    goal_handle = future.result()
+    result_future = goal_handle.get_result_async()
+    rclpy.spin_until_future_complete(_node, result_future)
 
 
 def _gripper_grasp() -> None:
-    client = ActionClient(_node, Grasp, "/fr3_gripper/grasp")
     goal = Grasp.Goal(
         width=0.0,
         speed=GRIPPER_GRASP_SPEED,
         force=GRIPPER_GRASP_FORCE,
         epsilon=Grasp.Goal.GraspEpsilon(inner=GRIPPER_GRASP_EPS, outer=GRIPPER_GRASP_EPS),
     )
-    future = client.send_goal_async(goal)
+    future = _gripper_grasp_client.send_goal_async(goal)
     rclpy.spin_until_future_complete(_node, future)
-    future.result().get_result_async()
+    goal_handle = future.result()
+    result_future = goal_handle.get_result_async()
+    rclpy.spin_until_future_complete(_node, result_future)
 
 
 # ── Mozgástervezés ────────────────────────────────────────────────────────────
 
-def _move_to(x_mm: float, y_mm: float, z_m: float) -> None:
+def _move_to(x_mm: float, y_mm: float, z_mm: float) -> None:
     """Egyszerű pose-alapú mozgás — kalibráló endpointhoz."""
     _moveit2.move_to_pose(
-        position=[x_mm / 1000.0, y_mm / 1000.0, z_m],
+        position=[x_mm / 1000.0, y_mm / 1000.0, z_mm / 1000.0],
         quat_xyzw=_DOWN_QUAT,
     )
     _moveit2.wait_until_executed()
+
+
+def _assert_reached(expected_m: list[float], tolerance_mm: float = 5.0) -> None:
+    """Raise RuntimeError if the robot is further than tolerance_mm from expected_m (metres)."""
+    ax, ay, az = _get_position()
+    ex = expected_m[0] * 1000.0
+    ey = expected_m[1] * 1000.0
+    ez = expected_m[2] * 1000.0
+    dist = math.sqrt((ax - ex) ** 2 + (ay - ey) ** 2 + (az - ez) ** 2)
+    if dist > tolerance_mm:
+        raise RuntimeError(
+            f"Robot nem érte el a várt pozíciót: "
+            f"várt ({ex:.1f}, {ey:.1f}, {ez:.1f}) mm, "
+            f"tényleges ({ax:.1f}, {ay:.1f}, {az:.1f}) mm, "
+            f"eltérés {dist:.1f} mm > {tolerance_mm:.0f} mm"
+        )
 
 
 def _cartesian_move(waypoints: list[list[float]]) -> None:
@@ -147,6 +202,7 @@ def _cartesian_move(waypoints: list[list[float]]) -> None:
         for wp in waypoints:
             _moveit2.move_to_pose(position=wp, quat_xyzw=_DOWN_QUAT)
             _moveit2.wait_until_executed()
+    _assert_reached(waypoints[-1])
 
 
 def _vertical_path(x_mm: float, y_mm: float, z_start: float, z_end: float) -> None:
@@ -178,33 +234,43 @@ def _arc_path(from_xy: tuple, to_xy: tuple) -> None:
     _cartesian_move(waypoints)
 
 
-def _pick_and_place(from_xy: tuple, to_xy: tuple) -> None:
+def _pick_and_place(from_xy: tuple, to_xy: tuple, piece: str = "P") -> None:
     fx, fy = from_xy
     tx, ty = to_xy
-    _vertical_path(fx, fy, Z_PICK, Z_LIFT)      # 1. fázis: egyenes felemelés
-    _gripper_grasp()                              # megfogás felemelés után
-    _arc_path(from_xy, to_xy)                    # 2. fázis: sima ív
-    _vertical_path(tx, ty, Z_LIFT, Z_PLACE)      # 3. fázis: egyenes leengedés
-    _gripper_open()                               # elengedés
-    _vertical_path(tx, ty, Z_PLACE, Z_LIFT)      # 4. fázis: visszaemelés a következő lépés előtt
+    z_pick = Z_PICK + PIECE_GRASP_HEIGHT.get(piece.upper(), 0.0)
+    _vertical_path(fx, fy, Z_LIFT, z_pick)       # 1. fázis: leereszkedés a bábura
+    _gripper_grasp()                              # 2. fázis: megfogás z_pick magasságon
+    _vertical_path(fx, fy, z_pick, Z_LIFT)       # 3. fázis: felemelés
+    _arc_path(from_xy, to_xy)                    # 4. fázis: sima ív
+    _vertical_path(tx, ty, Z_LIFT, Z_PLACE)      # 5. fázis: egyenes leengedés
+    _gripper_open()                               # 6. fázis: elengedés
+    _vertical_path(tx, ty, Z_PLACE, Z_LIFT)      # 7. fázis: visszaemelés
 
 
 # ── Lépésvégrehajtás ─────────────────────────────────────────────────────────
 
 def _execute_move(descriptor: dict[str, Any]) -> None:
     t = descriptor["type"]
+    piece = descriptor.get("piece", "P")
     if t == "simple":
-        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"])
-    elif t in ("capture", "en_passant"):
-        _pick_and_place(descriptor["captured_xy"], descriptor["graveyard_xy"])
-        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"])
+        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"], piece)
+    elif t == "capture":
+        captured_piece = descriptor.get("captured_piece", "P")
+        _pick_and_place(descriptor["captured_xy"], descriptor["graveyard_xy"], captured_piece)
+        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"], piece)
+    elif t == "en_passant":
+        _pick_and_place(descriptor["captured_xy"], descriptor["graveyard_xy"], "P")
+        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"], piece)
     elif t == "castling":
-        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"])
+        _pick_and_place(descriptor["piece_from_xy"], descriptor["piece_to_xy"], "K")
         rook = descriptor["castling_rook"]
-        _pick_and_place(rook["rook_from_xy"], rook["rook_to_xy"])
+        _pick_and_place(rook["rook_from_xy"], rook["rook_to_xy"], "R")
     elif t == "promotion":
-        _pick_and_place(descriptor["piece_from_xy"], descriptor["pawn_graveyard_xy"])
-        _pick_and_place(descriptor["piece_to_xy"], descriptor["promotion_target_xy"])
+        if descriptor.get("captured_xy") is not None:
+            captured_piece = descriptor.get("captured_piece", "P")
+            _pick_and_place(descriptor["captured_xy"], descriptor["graveyard_xy"], captured_piece)
+        _pick_and_place(descriptor["piece_from_xy"], descriptor["pawn_graveyard_xy"], "P")
+        _pick_and_place(descriptor["piece_to_xy"], descriptor["promotion_target_xy"], "Q")
     else:
         raise ValueError(f"Ismeretlen lépéstípus: {t!r}")
 
@@ -255,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, {"ok": True})
                 elif self.path == "/move":
                     body = self._read_json()
-                    _move_to(body["x"], body["y"], body["z"] / 1000.0)
+                    _move_to(body["x"], body["y"], body["z"])
                     self._send(200, {"ok": True})
                 else:
                     self._send(404, {"error": "not found"})
