@@ -70,11 +70,16 @@ def build_move_descriptor(
     piece_from_xy = calibration.square_to_xy(from_sq_name)
     piece_to_xy   = calibration.square_to_xy(to_sq_name)
 
+    moving_piece = board.piece_at(move.from_square)
+    piece_symbol = moving_piece.symbol().upper() if moving_piece else "P"
+
     descriptor: dict[str, Any] = {
         "uci":                 uci,
+        "piece":               piece_symbol,
         "piece_from_xy":       piece_from_xy,
         "piece_to_xy":         piece_to_xy,
         "captured_xy":         None,
+        "captured_piece":      None,
         "graveyard_xy":        None,
         "castling_rook":       None,
         "promotion_target_xy": None,
@@ -87,6 +92,11 @@ def build_move_descriptor(
         descriptor["type"] = "promotion"
         descriptor["piece_to_xy"] = calibration.promotion_queen_xy
         descriptor["promotion_target_xy"] = calibration.square_to_xy(to_sq_name)
+        if board.is_capture(move):
+            captured = board.piece_at(move.to_square)
+            descriptor["captured_piece"] = captured.symbol().upper() if captured else "P"
+            descriptor["captured_xy"]    = piece_to_xy
+            descriptor["graveyard_xy"]   = graveyard.next_slot()
         descriptor["pawn_graveyard_xy"] = graveyard.next_slot()
         return descriptor
 
@@ -106,15 +116,18 @@ def build_move_descriptor(
         # The captured pawn sits on the same file as destination but on the
         # rank of the moving pawn's origin
         ep_capture_sq = _en_passant_capture_square(board, move)
-        descriptor["captured_xy"]  = calibration.square_to_xy(chess.square_name(ep_capture_sq))
-        descriptor["graveyard_xy"] = graveyard.next_slot()
+        descriptor["captured_piece"] = "P"
+        descriptor["captured_xy"]    = calibration.square_to_xy(chess.square_name(ep_capture_sq))
+        descriptor["graveyard_xy"]   = graveyard.next_slot()
         return descriptor
 
     # ── Capture ───────────────────────────────────────────────────────
     if board.is_capture(move):
         descriptor["type"] = "capture"
-        descriptor["captured_xy"]  = piece_to_xy   # piece already on destination
-        descriptor["graveyard_xy"] = graveyard.next_slot()
+        captured = board.piece_at(move.to_square)
+        descriptor["captured_piece"] = captured.symbol().upper() if captured else "P"
+        descriptor["captured_xy"]    = piece_to_xy   # piece already on destination
+        descriptor["graveyard_xy"]   = graveyard.next_slot()
         return descriptor
 
     # ── Simple move ───────────────────────────────────────────────────
