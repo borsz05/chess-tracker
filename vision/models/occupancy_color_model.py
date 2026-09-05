@@ -5,12 +5,24 @@ import torch.nn as nn
 from torchvision import models
 
 
+def _build_model(variant: str, num_classes: int) -> nn.Module:
+    """Builds a classifier head for the given backbone variant."""
+    if variant == "efficientnet_b0":
+        m = models.efficientnet_b0(weights=None)
+        m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+        return m
+    # Default / legacy: resnet18
+    m = models.resnet18(weights=None)
+    m.fc = nn.Linear(m.fc.in_features, num_classes)
+    return m
+
+
 class OccupancyColorModel:
     """
-    3-osztályos mezőklasszifikáció:
-    - empty -> 0
-    - white -> 1
-    - black -> 2
+    3-class square classifier: empty → 0 | white → 1 | black → 2
+
+    Supports both ResNet18 (legacy) and EfficientNet-B0 checkpoints.
+    The checkpoint's 'variant' key selects the architecture automatically.
     """
 
     def __init__(self, weights_path, device=None, img_size=100):
@@ -34,8 +46,8 @@ class OccupancyColorModel:
         self.norm_mean_cpu = torch.tensor(mean, dtype=torch.float32).view(3, 1, 1)
         self.norm_std_cpu = torch.tensor(std, dtype=torch.float32).view(3, 1, 1)
 
-        self.model = models.resnet18(weights=None)
-        self.model.fc = nn.Linear(self.model.fc.in_features, 3)
+        variant = ckpt.get("variant", "resnet18")
+        self.model = _build_model(variant, len(self.class_names))
         self.model.load_state_dict(ckpt["model_state"])
         self.model.eval().to(self.device)
 
@@ -49,10 +61,6 @@ class OccupancyColorModel:
                 self.idx_to_label[idx] = 0
 
     def _preprocess(self, roi):
-        """
-        Single ROI preprocess.
-        Ugyanazt a normalizációt használja, mint a batch útvonal.
-        """
         if roi is None or roi.size == 0:
             return None
 
@@ -74,11 +82,6 @@ class OccupancyColorModel:
 
     @torch.no_grad()
     def predict_square(self, roi):
-        """
-        Egyedi ROI predikció.
-        Főleg debughoz / ellenőrzéshez tartható meg.
-        A fő pipeline a batch-es utat használja.
-        """
         x = self._preprocess(roi)
         if x is None:
             return "empty", 0.0

@@ -79,6 +79,8 @@ class StateStabilizer:
         hold_low_conf_threshold: float = 0.35,
         hold_min_duration_s: float = 0.40,
         recovery_stable_frames: int = 3,
+        flicker_tolerance_cells: int = 1,
+        max_candidate_misses: int = 3,
     ):
         self.buffer_size = int(buffer_size)
         self.min_votes_ratio = float(min_votes_ratio)
@@ -93,6 +95,8 @@ class StateStabilizer:
         self.hold_low_conf_threshold = float(hold_low_conf_threshold)
         self.hold_min_duration_s = float(hold_min_duration_s)
         self.recovery_stable_frames = int(recovery_stable_frames)
+        self.flicker_tolerance_cells = int(flicker_tolerance_cells)
+        self.max_candidate_misses = int(max_candidate_misses)
 
         self._occ_buf: deque[OccGrid] = deque(maxlen=self.buffer_size)
         self._conf_buf: deque[ConfGrid] = deque(maxlen=self.buffer_size)
@@ -100,6 +104,7 @@ class StateStabilizer:
         self._last_emitted: OccGrid | None = None
         self._candidate: OccGrid | None = None
         self._candidate_run = 0
+        self._candidate_miss = 0
 
         self._mode: str = "WARMUP"
         self._hold_until: float = 0.0
@@ -120,6 +125,7 @@ class StateStabilizer:
         self._last_emitted = None
         self._candidate = None
         self._candidate_run = 0
+        self._candidate_miss = 0
         self._mode = "WARMUP"
         self._hold_until = 0.0
         self._last_emit_time = 0.0
@@ -147,6 +153,42 @@ class StateStabilizer:
         avg_strength = sum(strengths) / len(strengths)
         return cand, avg_strength
 
+    def _classify_candidate_change(self, cand: OccGrid) -> str:
+        """SAME / FLICKER / CHANGED verdict for the incoming vote candidate.
+
+        Every real chess move changes at least two cells (from-square and
+        to-square; en passant three, castling four). A single differing cell
+        is therefore almost always classifier noise, so it must not throw
+        away the whole persistence run — that reset-on-any-difference was
+        what kept the pipeline stuck in candidate_not_persistent whenever one
+        square flickered. After max_candidate_misses consecutive flickers we
+        still adopt the new grid, so a genuinely shifted state converges.
+        """
+        if self._candidate is None:
+            return "CHANGED"
+
+        dist = _hamming_occ(cand, self._candidate)
+        if dist == 0:
+            return "SAME"
+        if dist <= self.flicker_tolerance_cells and self._candidate_miss < self.max_candidate_misses:
+            return "FLICKER"
+        return "CHANGED"
+
+    def _advance_candidate(self, cand: OccGrid, run_attr: str) -> None:
+        """Updates the tracked candidate and the given run counter in place."""
+        verdict = self._classify_candidate_change(cand)
+
+        if verdict == "SAME":
+            setattr(self, run_attr, getattr(self, run_attr) + 1)
+            self._candidate_miss = 0
+        elif verdict == "FLICKER":
+            # Keep both the candidate and its run — only note the miss.
+            self._candidate_miss += 1
+        else:
+            self._candidate = cand
+            setattr(self, run_attr, 1)
+            self._candidate_miss = 0
+
     def update(
         self,
         occ: OccGrid | None,
@@ -173,12 +215,7 @@ class StateStabilizer:
                 return StabilizerDecision(None, "hold_active", self._mode)
 
             cand, vote_strength = self._majority_vote_candidate()
-
-            if self._candidate is not None and _hamming_occ(cand, self._candidate) == 0:
-                self._recovery_run += 1
-            else:
-                self._candidate = cand
-                self._recovery_run = 1
+            self._advance_candidate(cand, "_recovery_run")
 
             if mean_conf >= self.min_mean_conf and vote_strength >= self.min_votes_ratio:
                 if self._recovery_run >= self.recovery_stable_frames:
@@ -195,12 +232,12 @@ class StateStabilizer:
             return StabilizerDecision(None, "hold_low_conf", self._mode)
 
         cand, vote_strength = self._majority_vote_candidate()
+        self._advance_candidate(cand, "_candidate_run")
 
-        if self._candidate is not None and _hamming_occ(cand, self._candidate) == 0:
-            self._candidate_run += 1
-        else:
-            self._candidate = cand
-            self._candidate_run = 1
+        # Everything below judges (and emits) the persisted candidate, not this
+        # frame's raw vote — on a FLICKER frame those differ, and the persisted
+        # grid is the one the run counter actually validated.
+        cand = self._candidate
 
         if self._last_emitted is None:
             if (

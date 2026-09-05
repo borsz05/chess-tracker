@@ -45,7 +45,7 @@ _DOWN_QUAT = [1.0, 0.0, 0.0, 0.0]
 
 # ── Fizikai paraméterek (méter) ──────────────────────────────────────────────
 GRIPPER_OPEN_WIDTH  = 0.06    # metres — clears any chess piece without hitting neighbours
-GRIPPER_GRASP_FORCE = 20.0    # Newtons
+GRIPPER_GRASP_FORCE = 10.0    # Newtons
 GRIPPER_GRASP_SPEED = 0.05    # m/s
 GRIPPER_GRASP_EPS   = 0.015   # metres inner/outer epsilon
 
@@ -66,8 +66,8 @@ PIECE_GRASP_HEIGHT: dict[str, float] = {
     "K": 0.045,   # király ~90mm → nyak ~45mm
 }
 
-VELOCITY     = 0.3
-ACCELERATION = 0.3
+VELOCITY     = 0.05
+ACCELERATION = 0.05
 
 PORT = 8002
 

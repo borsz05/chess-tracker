@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from chess_logic import Board, Game, board_to_occupancy
 from vision.app.config import AppConfig, make_stabilizer
 from vision.pipeline.batch_classifier import BatchClassificationResult, classify_frame_batch, classify_selected_squares
 from vision.pipeline.board_detector import detect_board_on_frame
+from vision.pipeline.profiler import PipelineProfiler
 
 
 @dataclass
@@ -37,6 +39,11 @@ def raw_to_standard(grid: np.ndarray) -> np.ndarray:
 
 def occ_distance(a: np.ndarray, b: np.ndarray) -> int:
     return int(np.count_nonzero(a != b))
+
+
+# Stabilizer reasons that mean "the pipeline agrees with itself right now".
+# Anything else is the pipeline actively failing to converge.
+_SETTLED_REASONS = frozenset({"no_change", "cooldown"})
 
 
 def disturbance_score(prev_occ: np.ndarray | None, curr_occ: np.ndarray | None) -> int:
@@ -84,6 +91,11 @@ class ChessVisionTracker:
 
         self.game = Game(cfg.start_fen)
         self.stabilizer = make_stabilizer()
+
+        self.profiler: PipelineProfiler | None = (
+            PipelineProfiler() if cfg.enable_pipeline_profiler else None
+        )
+
         self.occ_model = model if model is not None else self._load_model()
 
         self.expected_start_occ = np.asarray(
@@ -106,23 +118,35 @@ class ChessVisionTracker:
         self.prev_raw_confs = None
         self.frame_counter = 0
 
-    def _create_profiler(self):
-        if not self.cfg.enable_pipeline_profiler:
-            return None
-        from vision.pipeline.profiler import PipelineProfiler
-        return PipelineProfiler()
+        # Board re-detection on sustained stall
+        self._unsettled_since: float | None = None
+        self._last_redetect_t: float = 0.0
+
+        # Init phase timing (perf_counter-based, ms)
+        self._init_start: float | None = None
+        self._init_frames: int = 0
+        self._init_board_detect_ms: float | None = None
+        self._init_total_ms: float | None = None
 
     def _load_model(self):
-        profiler = self._create_profiler()
-        if profiler:
-            profiler.start("model_load")
+        if self.profiler:
+            self.profiler.start("model_load")
         from vision.models.occupancy_color_model import OccupancyColorModel
-        weights_path = self.cfg.weights_path
-        model = OccupancyColorModel(weights_path=weights_path)
-        if profiler:
-            profiler.stop("model_load")
-        self.profiler = profiler
+        model = OccupancyColorModel(weights_path=self.cfg.weights_path)
+        if self.profiler:
+            self.profiler.stop("model_load")
         return model
+
+    @property
+    def init_stats(self) -> dict | None:
+        """Returns init-phase timing info once initialized, else None."""
+        if not self.initialized:
+            return None
+        return {
+            "frames": self._init_frames,
+            "board_detect_ms": self._init_board_detect_ms,
+            "total_ms": self._init_total_ms,
+        }
 
     @contextmanager
     def _profile(self, name: str):
@@ -284,10 +308,17 @@ class ChessVisionTracker:
         self.frame_counter = 1
 
     def try_initialize_from_frame(self, frame_bgr: np.ndarray) -> FrameProcessResult:
+        if self._init_start is None:
+            self._init_start = time.perf_counter()
+        self._init_frames += 1
+
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
         if self.det is None:
+            t_det = time.perf_counter()
             self.det = self._detect_board(gray)
+            if self.det.ok and self._init_board_detect_ms is None:
+                self._init_board_detect_ms = (time.perf_counter() - t_det) * 1000.0
             if not self.det.ok:
                 self.det = None
                 return self._make_result(
@@ -338,6 +369,13 @@ class ChessVisionTracker:
         self._store_init_baseline(frame_bgr, cls, init_labels, init_confs)
         confs_std = raw_to_standard(cls.confs)
 
+        if self._init_start is not None:
+            self._init_total_ms = (time.perf_counter() - self._init_start) * 1000.0
+            if self.profiler:
+                self.profiler.record("init_total", self._init_total_ms)
+                if self._init_board_detect_ms is not None:
+                    self.profiler.record("init_board_detect_ok", self._init_board_detect_ms)
+
         return self._make_result(
             initialized=True,
             board_changed=False,
@@ -364,6 +402,41 @@ class ChessVisionTracker:
         self.prev_raw_labels = cls.labels.copy()
         self.prev_raw_confs = cls.confs.copy()
         self.frame_counter += 1
+
+    def _should_redetect_board(self, decision, now: float) -> bool:
+        """True once the stabilizer has been unable to settle for long enough
+        that the frozen homography is worth re-solving."""
+        settled = decision.emit_occ is not None or decision.reason in _SETTLED_REASONS
+        if settled:
+            self._unsettled_since = None
+            return False
+
+        if self._unsettled_since is None:
+            self._unsettled_since = now
+            return False
+
+        if (now - self._unsettled_since) < self.cfg.redetect_after_stuck_s:
+            return False
+
+        return (now - self._last_redetect_t) >= self.cfg.redetect_min_interval_s
+
+    def _redetect_board(self, frame_bgr: np.ndarray) -> bool:
+        """Re-solves the board homography and invalidates the frame cache."""
+        self._last_redetect_t = time.time()
+        self._unsettled_since = None
+
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        det = self._detect_board(gray)
+        if not det.ok:
+            return False
+
+        self.det = det
+        # The warp moved, so the cached previous frame and its labels no longer
+        # line up with the new bboxes — drop them to force a full reclassify.
+        self.prev_warp = None
+        self.prev_raw_labels = None
+        self.prev_raw_confs = None
+        return True
 
     def _stabilize_observation(self, labels_std: np.ndarray, confs_std: np.ndarray):
         with self._profile("stabilizer"):
@@ -403,6 +476,10 @@ class ChessVisionTracker:
 
         decision = self._stabilize_observation(labels_std, confs_std)
         if decision.emit_occ is None:
+            if self._should_redetect_board(decision, time.time()):
+                ok = self._redetect_board(frame_bgr)
+                mode = "redetect-ok" if ok else "redetect-failed"
+                return self._no_move_result(raw_labels, confs_std, mode, raw_dist, obs_mean)
             return self._no_move_result(raw_labels, confs_std, f"{decision.mode}:{decision.reason}", raw_dist, obs_mean)
 
         stable_occ = np.asarray(decision.emit_occ, dtype=np.int32)

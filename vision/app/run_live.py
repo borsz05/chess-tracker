@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib import error, request
 
@@ -51,12 +53,16 @@ def _check_calibration_gate() -> None:
 
 @dataclass
 class LiveConfig:
-    camera_index: int = 0
+    camera_index: int = 4
     camera_width: int = 1280
     camera_height: int = 720
     camera_fps: int = 30
 
-    process_every_nth_captured_frame: int = 6
+    # 30 fps capture / 3 = 10 fps processing (~100 ms budget). Measured
+    # frame_total is p50 8 ms, p95 66 ms, so this fits with margin; the old
+    # value of 6 was tuned before partial reclassify existed and just added
+    # latency to every stabilizer gate.
+    process_every_nth_captured_frame: int = 3
     preview_max_width: int = 1280
 
     show_preview: bool = True
@@ -71,6 +77,11 @@ class LiveConfig:
     backend_timeout_s: float = 2.5
     reset_backend_on_start: bool = True
     reset_backend_on_manual_tracker_reset: bool = True
+
+    enable_timing: bool = True
+    timing_output_dir: str = "timing_output"
+    # Minimum disturbance (changed cells) to mark a move as "started"
+    move_disturbance_threshold: int = 2
 
 
 class BackendSyncClient:
@@ -236,6 +247,9 @@ class LiveProcessor:
         self._running = False
         self._thread = None
 
+        # Persistent across tracker resets — all moves from the whole session
+        self._move_records: list[dict] = []
+
     def _reset_runtime_state(self):
         self.last_result = None
         self.last_processed_seq = 0
@@ -254,6 +268,12 @@ class LiveProcessor:
         self._robot_was_busy = False
         self._robot_busy_cache = False
         self._robot_busy_last_check = 0.0
+        # Timing state
+        self._init_start_wall: float = time.time()
+        self._init_done_wall: float | None = None
+        self._prev_initialized: bool = False
+        self._move_disturbance_t0: float | None = None
+        self._move_disturbance_frames: int = 0
 
     def start(self, camera: LatestFrameCamera):
         self._running = True
@@ -417,7 +437,65 @@ class LiveProcessor:
                 time.sleep(0.01)
                 continue
 
-            dt_ms = (time.time() - t0) * 1000.0
+            t_done = time.time()
+            dt_ms = (t_done - t0) * 1000.0
+
+            # Record total frame processing time in profiler
+            with self._tracker_lock:
+                profiler = self.tracker.profiler
+            if profiler:
+                profiler.record("frame_total", dt_ms)
+
+            # Init completion detection
+            with self._state_lock:
+                prev_init = self._prev_initialized
+            if not prev_init and initialized:
+                init_wall_ms = (t_done - self._init_start_wall) * 1000.0
+                with self._tracker_lock:
+                    istats = self.tracker.init_stats
+                logger.info(
+                    "Inicializálás kész! Fal: %.1f ms | Board detect: %s ms | Frames: %d",
+                    init_wall_ms,
+                    f"{istats['board_detect_ms']:.1f}" if istats and istats.get("board_detect_ms") else "?",
+                    istats["frames"] if istats else 0,
+                )
+                with self._state_lock:
+                    self._init_done_wall = t_done
+                    self._prev_initialized = True
+            elif initialized:
+                with self._state_lock:
+                    self._prev_initialized = True
+
+            # Move disturbance / end-to-end latency tracking
+            if initialized:
+                threshold = self.live_cfg.move_disturbance_threshold
+                with self._state_lock:
+                    disturbance_t0 = self._move_disturbance_t0
+                    disturbance_frames = self._move_disturbance_frames
+
+                if result.board_changed:
+                    if disturbance_t0 is not None:
+                        latency_ms = (t_done - disturbance_t0) * 1000.0
+                    else:
+                        latency_ms = None
+                    self._move_records.append({
+                        "move_num": move_count,
+                        "uci": result.uci or "",
+                        "latency_ms": f"{latency_ms:.2f}" if latency_ms is not None else "",
+                        "frames_to_detect": disturbance_frames,
+                        "mode": result.mode or "",
+                    })
+                    with self._state_lock:
+                        self._move_disturbance_t0 = None
+                        self._move_disturbance_frames = 0
+                elif disturbance_t0 is None and result.raw_dist >= threshold:
+                    with self._state_lock:
+                        self._move_disturbance_t0 = t0
+                        self._move_disturbance_frames = 1
+                elif disturbance_t0 is not None:
+                    with self._state_lock:
+                        self._move_disturbance_frames += 1
+
             do_auto_reset = self._store_result(seq, result, initialized, dt_ms)
 
             if do_auto_reset:
@@ -455,6 +533,86 @@ class LiveProcessor:
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=1.0)
+        if self.live_cfg.enable_timing:
+            self._export_timing()
+
+    # ------------------------------------------------------------------ #
+    # Timing export                                                        #
+    # ------------------------------------------------------------------ #
+
+    def _export_timing(self) -> None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path(self.live_cfg.timing_output_dir) / ts
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        with self._tracker_lock:
+            profiler = self.tracker.profiler
+            istats = self.tracker.init_stats
+
+        if profiler:
+            profiler.save_samples_csv(out_dir / "components_samples.csv")
+            profiler.save_summary_csv(out_dir / "components_summary.csv")
+            profiler.report()
+
+        self._save_moves_csv(out_dir / "moves.csv")
+        self._print_move_summary(istats)
+        logger.info("Időzítési adatok mentve: %s", out_dir.resolve())
+
+    def _save_moves_csv(self, path: Path) -> None:
+        if not self._move_records:
+            logger.info("Nem volt detektált lépés — moves.csv nem mentve.")
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = ["move_num", "uci", "latency_ms", "frames_to_detect", "mode"]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(self._move_records)
+        logger.info("Lépés latenciák mentve: %s (%d lépés)", path, len(self._move_records))
+
+    def _print_move_summary(self, istats: dict | None) -> None:
+        import statistics as _statistics
+        w = 60
+        logger.info("=" * w)
+        logger.info("  LÉPÉSDETEKTÁLÁS ÖSSZEFOGLALÓ")
+        logger.info("=" * w)
+
+        with self._state_lock:
+            init_done = self._init_done_wall
+            init_start = self._init_start_wall
+        if init_done is not None:
+            logger.info("  Inicializálás (fal-idő): %.1f ms", (init_done - init_start) * 1000.0)
+        if istats:
+            if istats.get("total_ms") is not None:
+                logger.info("  Inicializálás (CPU):     %.1f ms", istats["total_ms"])
+            if istats.get("board_detect_ms") is not None:
+                logger.info("  Board detect (1. ok):    %.1f ms", istats["board_detect_ms"])
+            logger.info("  Init frame-ek száma:     %d", istats.get("frames", 0))
+
+        logger.info("-" * w)
+
+        latencies = []
+        for r in self._move_records:
+            if r.get("latency_ms"):
+                try:
+                    latencies.append(float(r["latency_ms"]))
+                except ValueError:
+                    pass
+
+        if not latencies:
+            logger.info("  Nincs mérhető lépés latencia.")
+            logger.info("=" * w)
+            return
+
+        s = sorted(latencies)
+        n = len(s)
+        logger.info("  Detektált lépések:       %d", n)
+        logger.info("  Átlag latencia:          %.1f ms", _statistics.mean(s))
+        logger.info("  Min latencia:            %.1f ms", s[0])
+        logger.info("  Max latencia:            %.1f ms", s[-1])
+        logger.info("  Medián (p50):            %.1f ms", s[n // 2])
+        logger.info("  95. percentilis (p95):   %.1f ms", s[min(int(n * 0.95), n - 1)])
+        logger.info("=" * w)
 
 
 def fit_preview(frame, max_width: int):

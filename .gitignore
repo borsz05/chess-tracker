@@ -4,3 +4,6 @@ __pycache__/
 stockfish/
 weights/
 data/
+*.jpg
+*.csv
+timing_output/dashboard.html

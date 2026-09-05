@@ -24,13 +24,23 @@ class AppConfig:
     fuzzy_max_noise_cells: int = 1
     fuzzy_max_weighted_cost: float = 0.9
 
-    enable_pipeline_profiler: bool = False
+    enable_pipeline_profiler: bool = True
 
     partial_reclassify: bool = True
     partial_diff_threshold: float = 18.0
-    partial_max_squares: int = 12
+    # A hand over the board dirties well over 12 squares; the ones that don't
+    # fit kept stale labels and poisoned the vote. ~3.3 ms/square, so 20 is
+    # still far inside the per-frame budget.
+    partial_max_squares: int = 20
 
-    full_reclassify_interval: int = 30
+    full_reclassify_interval: int = 45
+
+    # The homography is solved once at init and then frozen, so a nudged board
+    # or camera degrades every later classification with no way back. When the
+    # stabilizer cannot settle for this long, re-solve it (~1.4 s, hence the
+    # cooldown between attempts).
+    redetect_after_stuck_s: float = 4.0
+    redetect_min_interval_s: float = 10.0
 
     @property
     def warp_size(self):
@@ -51,4 +61,9 @@ def make_stabilizer():
         hold_low_conf_threshold=0.35,
         hold_min_duration_s=0.50,
         recovery_stable_frames=2,
+        # A one-cell difference is classifier noise, never a legal move, so it
+        # no longer resets the persistence run — this is the main fix for
+        # getting stuck in candidate_not_persistent.
+        flicker_tolerance_cells=1,
+        max_candidate_misses=3,
     )

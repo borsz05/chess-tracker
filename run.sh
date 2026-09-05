@@ -68,7 +68,12 @@ tmux new-session -d -s "$SESSION" -n "robot" \
 
 # Alsó pane — chess_executor HTTP szerver (8mp várakozás a MoveIt2 után)
 tmux split-window -v -p 40 -t "$SESSION:0" \
-    "echo '>>> Várakozás MoveIt2 indulásra (8mp)...' && sleep 8 && docker exec franka_ros2_humble bash -c 'source /ros2_ws/install/setup.bash && python3 /ros2_ws/chess_executor.py'; echo '--- Executor leállt, nyomj Entert ---'; read"
+    "echo '>>> Várakozás MoveIt2 indulásra (8mp)...' && sleep 8 && docker exec franka_ros2_humble bash -c 'source /ros2_ws/install/setup.bash && python3 /ros2_ws/chess_executor.py'; echo '--- Executor leállt ---'; exec bash"
 
 tmux select-pane -t "$SESSION:0.0"
-tmux attach-session -t "$SESSION"
+# Ha nincs terminál (pl. nem interaktív shell), ne próbáljon attach-elni
+if [ -t 1 ]; then
+    tmux attach-session -t "$SESSION"
+else
+    echo "tmux session '$SESSION' elindítva (detached). Csatlakozás: tmux attach-session -t $SESSION"
+fi
