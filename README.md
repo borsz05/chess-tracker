@@ -84,6 +84,23 @@ The ResNet18 checkpoint is not included in this repository. Obtain it and place 
 vision/models/weights/resnet18_best_topdown.pt
 ```
 
+### Training data and model training (`tools/`)
+
+| Script | Purpose |
+|---|---|
+| `tools/collect_fen_dataset.py` | Collect training ROIs from the live camera, labelled automatically from a known FEN (occupancy **and** piece type). Uses the exact live crop path (`detect_board_on_frame` → warp → `crop_with_context(context=0.50)`). Output is compatible with the `train_new/val_new/{black,empty,white}` layout of the [existing dataset](https://github.com/borsz05/sakk_modelltanitas). |
+| `tools/train_square_classifier.py` | Colab-ready trainer for the hybrid multi-task square classifier (3-class colour head + 7-class piece-type head, architecture in `vision/models/square_net.py`). `--benchmark-only` measures the candidate backbones on CPU under ONNX Runtime; the header documents the measured decision. |
+| `tools/fen_labels.py` | FEN → raw (camera) grid labels, via the inverse of the pipeline's `raw_to_standard`. |
+| `tools/dump_live_rois.py` | Dump live ROIs with the current model's predictions, for visual comparison with the training set. |
+
+```bash
+# fixed exposure / white balance is essential — auto-exposure makes black pieces flicker in brightness
+python -m tools.collect_fen_dataset --session morning_window --fen-file positions.txt --exposure 250 --wb-temp 4600
+python tools/train_square_classifier.py --benchmark-only
+python tools/train_square_classifier.py --data-root ../sakk_modelltanitas --data-root data_fen --eval-dir data_fen --arch mobilenet_v3_small
+python -m pytest tests
+```
+
 ### Robot (Docker container)
 
 Build once — this pulls ROS2 Humble, libfranka, franka\_description, pymoveit2, and MoveIt2:

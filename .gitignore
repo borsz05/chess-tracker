@@ -7,3 +7,5 @@ data/
 *.jpg
 *.csv
 timing_output/dashboard.html
+data_fen/
+*.onnx
