@@ -26,6 +26,26 @@ export function formatResultLabel(result) {
   return "Parti vége";
 }
 
+/** "1-0" | "0-1" | "1/2-1/2" — a lezárt parti eredménye, különben null. */
+export function decisiveResult(state) {
+  const r = state?.result;
+  if (r === "1-0" || r === "0-1" || r === "1/2-1/2") return r;
+  return null;
+}
+
+/** Rövid, ünneplő felirat az eredmény mellé. */
+export function winnerHeadline(result) {
+  if (result === "1-0") return "Fehér nyert!";
+  if (result === "0-1") return "Fekete nyert!";
+  if (result === "1/2-1/2") return "Döntetlen!";
+  return "";
+}
+
+/** Az eval-sávban és a jelvényen megjelenő rövid alak. */
+export function resultBadgeText(result) {
+  return result === "1/2-1/2" ? "½–½" : result;
+}
+
 export function formatFinishReason(status = {}) {
   if (status.is_checkmate) return "Matt";
   if (status.is_stalemate) return "Patt";

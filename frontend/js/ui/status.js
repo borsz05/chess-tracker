@@ -6,18 +6,22 @@ import {
   sideToMoveLabel,
 } from "../utils/game.js";
 
+/**
+ * Csak akkor mond valamit, ha BAJ van. Élő kapcsolatnál üres — a működő
+ * alapállapotot nem kell feliratozni, a hibát viszont látni kell.
+ */
 function connectionText(connectionState) {
   const conn = connectionState || {};
 
-  if (conn.connected) return "Kapcsolat: WebSocket él";
-  if (conn.kind === "connecting") return "Kapcsolódás WebSocketen...";
+  if (conn.connected) return "";
+  if (conn.kind === "connecting") return "Kapcsolódás…";
   if (conn.kind === "reconnecting") {
-    return `Újracsatlakozás... (${conn.reconnectAttempt ?? 0})`;
+    return `Újracsatlakozás… (${conn.reconnectAttempt ?? 0})`;
   }
-  if (conn.kind === "error") return "WebSocket hiba";
-  if (conn.kind === "disconnected") return "Kapcsolat megszakadt";
-  if (conn.kind === "closed") return "Kapcsolat lezárva";
-  return "Kapcsolat: ismeretlen";
+  if (conn.kind === "error") return "Kapcsolati hiba";
+  if (conn.kind === "disconnected") return "A kapcsolat megszakadt";
+  if (conn.kind === "closed") return "A kapcsolat lezárult";
+  return "";
 }
 
 export function updateStatusUI(state, connectionState) {
@@ -31,7 +35,11 @@ export function updateStatusUI(state, connectionState) {
   const status = safeState.status || {};
   const finished = isGameFinished(safeState);
 
-  setText(connectionDiv, connectionText(connectionState));
+  const connText = connectionText(connectionState);
+  setText(connectionDiv, connText);
+  if (connectionDiv) {
+    connectionDiv.hidden = connText === "";
+  }
 
   let text = "Folyamatban";
   if (finished) {

@@ -14,11 +14,14 @@ body {
 
 /* ── CSS VÁLTOZÓK ─────────────────────────────────────────── */
 :root {
-  --bg-app:     #E2DBBE;
-  --bg-board:   #D5D6AA;
-  --panel-bg:   #DDD9B8;
-  --panel-bg-2: #D8D4B0;
-  --surface-1:  #CCC9A0;
+  /* EGY közös alap az egész oldalnak: a tábla és a panel mögött ugyanaz a
+     szín, így nincs látható törés a kettő között. A panel ennél VILÁGOSABB,
+     hogy önálló felületként olvasódjon — ez adja a mélységet árnyék nélkül. */
+  --bg-app:     #D3D2AB;
+  --bg-board:   var(--bg-app);
+  --panel-bg:   #E4E0C5;
+  --panel-bg-2: #DAD5B6;
+  --surface-1:  #CFCBA6;
   --surface-2:  #BEBBA0;
   --surface-3:  #B0AD90;
 
@@ -149,6 +152,20 @@ h1, h2, h3,
   color: var(--eval-white);
 }
 
+/* Lezárt parti: a sáv végig a győztes színe, az eredmény középen ül. */
+#eval-bar-score.result {
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+#eval-bar-score.result.on-white { color: var(--accent-dark); }
+#eval-bar-score.result.on-black { color: var(--eval-white); }
+#eval-bar-score.result.on-draw  { color: var(--accent-dark); }
+
 /* ── TÁBLA ────────────────────────────────────────────────── */
 #board {
   width: min(82vh, 78vw);
@@ -187,7 +204,7 @@ h1, h2, h3,
 
 .sidebar-header {
   flex: 0 0 auto;
-  padding: 20px 22px 16px 22px;
+  padding: 18px 22px;
   border-bottom: var(--line);
   background: var(--panel-bg-2);
 }
@@ -256,13 +273,36 @@ h1, h2, h3,
 }
 
 .top-score.score-white-lead {
-  background: #ECEACC;
+  background: #F4F1DC;
   color: var(--accent-dark);
 }
 
 .top-score.score-black-lead {
   background: var(--accent-dark);
   color: #E2DBBE;
+}
+
+.top-score.score-draw {
+  background: var(--surface-1);
+  color: var(--text-main);
+}
+
+/* ── VÉGEREDMÉNY-SOR (a motorvonalak helyén) ──────────────── */
+.top-line-result {
+  grid-template-columns: auto 1fr;
+  padding: 14px;
+}
+
+.top-line-result:hover {
+  background: transparent;
+}
+
+.result-headline {
+  font-family: "Literata", Georgia, serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--accent-dark);
+  letter-spacing: 0.01em;
 }
 
 .top-move-line {
@@ -381,34 +421,35 @@ h1, h2, h3,
   color: var(--text-label);
 }
 
+/* Csak hibánál látszik (status.js rejti el, ha él a kapcsolat). */
 #connection-status {
-  font-size: 0.88rem;
-  color: var(--text-dim);
-  padding: 0;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: #7A3A2A;
   margin: 0;
 }
 
+/* Egyetlen kiemelt elem a szekcióban — a parti állapota. */
 .status-section #game-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 9px 13px;
   border-radius: var(--radius-md);
   background: var(--surface-1);
-  font-weight: 500;
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 0.92rem;
   color: var(--text-main);
   border: var(--line);
 }
 
+/* A másodlagos infók csendes sorok, nem dobozok — három egymásra rakott
+   keretes doboz zsúfoltnak hatott. */
 #side-to-move,
 #move-counters {
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   color: var(--text-soft);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  border: var(--line);
+  padding: 0 2px;
 }
 
 /* ── GOMBOK ───────────────────────────────────────────────── */

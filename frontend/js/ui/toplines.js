@@ -5,7 +5,12 @@ import {
   normalizeScore,
 } from "../utils/format.js";
 import { emptyElement } from "../utils/dom.js";
-import { isGameFinished } from "../utils/game.js";
+import {
+  decisiveResult,
+  isGameFinished,
+  resultBadgeText,
+  winnerHeadline,
+} from "../utils/game.js";
 
 function splitLineForOverflow(span, fullText) {
   const tokens = (fullText || "").split(/\s+/).filter(Boolean);
@@ -94,6 +99,32 @@ export function updateTopLinesUI(viewModel) {
   if (!container) return;
 
   emptyElement(container);
+
+  // Lezárt parti: a motorvonalak helyett az eredmény — ugyanabban a
+  // jelvény + szöveg formában, mint a centipawn-érték, de a győztes színével.
+  const result = viewModel?.finished ? decisiveResult(viewModel.state) : null;
+  if (result) {
+    container.classList.add("top-lines-game-over");
+
+    const row = document.createElement("div");
+    row.className = "top-line top-line-result";
+
+    const badge = document.createElement("span");
+    badge.className = "top-score";
+    badge.classList.add(
+      result === "1-0" ? "score-white-lead" : result === "0-1" ? "score-black-lead" : "score-draw"
+    );
+    badge.textContent = resultBadgeText(result);
+
+    const headline = document.createElement("span");
+    headline.className = "result-headline";
+    headline.textContent = winnerHeadline(result);
+
+    row.appendChild(badge);
+    row.appendChild(headline);
+    container.appendChild(row);
+    return;
+  }
 
   const lines = viewModel?.lines || [];
   const sideToMove = viewModel?.sideToMove ?? "w";
