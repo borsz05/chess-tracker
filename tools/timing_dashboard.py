@@ -45,6 +45,9 @@ def parse_moves(path: Path) -> list[dict]:
         r["move_num"] = int(r["move_num"])
         r["latency_ms"] = float(r["latency_ms"])
         r["frames_to_detect"] = int(r["frames_to_detect"])
+        # Added in the Sept 2026 pipeline refactor -- absent in older runs.
+        for k in ("latency_from_state_ms", "latency_from_static_ms"):
+            r[k] = float(r[k]) if r.get(k) else None
         out.append(r)
     return out
 
@@ -80,7 +83,9 @@ def collect_runs() -> dict:
     return {"runs": runs, "order": order}
 
 
-TEMPLATE = r"""<meta charset="utf-8">
+TEMPLATE = r"""<!DOCTYPE html>
+<html lang="hu" data-theme="light">
+<meta charset="utf-8">
 <title>Pipeline Telemetry</title>
 <style>
   :root {
@@ -100,6 +105,10 @@ TEMPLATE = r"""<meta charset="utf-8">
     --series-frame: #256abf;
     --status-good: #0ca30c;
     --status-warning: #c98500;
+    /* A lepesenkenti ido ket fazisa: passzivan varunk a kezre (szurke),
+       majd dolgozik a rendszer (kek). */
+    --phase-hand: #b9c5ca;
+    --phase-system: #2a78d6;
     --grid-line: #dde3e3;
     --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -218,8 +227,26 @@ TEMPLATE = r"""<meta charset="utf-8">
   .mode-exact { background: color-mix(in oklab, var(--status-good) 16%, transparent); color: var(--status-good); }
   .mode-fuzzy { background: color-mix(in oklab, var(--status-warning) 18%, transparent); color: var(--status-warning); }
   .mode-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .latency-track { position: relative; height: 14px; background: var(--surface-2); border-radius: 3px; width: 140px; overflow: hidden; }
-  .latency-fill { position: absolute; inset: 0; border-radius: 3px 2px 2px 3px; }
+  /* Lépésenkénti idő: a sáv IDŐRENDBEN olvasandó balról jobbra.
+     Előbb a kéz mozgatja a bábut, utána dolgozik a rendszer — ezért a
+     rendszer-szegmens a sáv VÉGÉN van (korábban az elején volt, ami
+     félreérthető volt). */
+  .lat-row { display: flex; align-items: center; gap: 12px; }
+  .lat-track { position: relative; height: 16px; width: 190px; flex: 0 0 190px;
+               background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+  .lat-bar { position: absolute; inset: 0 auto 0 0; display: flex; border-radius: 4px; overflow: hidden; }
+  .lat-hand { background: var(--phase-hand); }
+  .lat-sys  { background: var(--phase-system); }
+  .lat-nums { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+  .n-hand { color: var(--text-secondary); font-weight: 600; }
+  .n-sys  { color: var(--phase-system); font-weight: 700; }
+  .n-plus, .n-total { color: var(--text-muted); font-weight: 400; }
+
+  /* Jelmagyarázat a szekció fejlécében */
+  .lat-legend { display: flex; flex-direction: column; gap: 7px; margin-top: 11px; }
+  .lat-key { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .lat-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: 0 0 auto; position: relative; top: 1px; }
+  .lat-key b { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
   .table-scroll { overflow-x: auto; }
 
   footer { color: var(--text-muted); font-size: 11.5px; font-family: var(--mono); border-top: 1px solid var(--border); padding-top: 14px; }
@@ -276,7 +303,17 @@ TEMPLATE = r"""<meta charset="utf-8">
   <section id="movesSection">
     <div class="section-head">
       <h2>Lépésenkénti felismerési idő</h2>
-      <div class="section-note">Mennyi ideig tartott lépésenként a felismerés (<span style="font-family:var(--mono)">latency_ms</span>), hány frame kellett hozzá, és pontos (<span class="mode-chip mode-exact" style="padding:0 6px"><i class="dot"></i>exact</span>) vagy közelítő (<span class="mode-chip mode-fuzzy" style="padding:0 6px"><i class="dot"></i>fuzzy</span>) módszerrel sikerült.</div>
+      <div class="section-note">
+        A sáv <b>időrendben</b> olvasható, balról jobbra: előbb a kéz mozgatja a bábut,
+        utána dolgozik a rendszer. Csak a <b>kék</b> szakasz a rendszer sajátja — a szürke
+        arra ment el, amíg a kéz a táblán volt.
+        <div class="lat-legend">
+          <span class="lat-key"><i style="background:var(--phase-hand)"></i>
+            <b>Kéz a táblán</b> — a bábu mozgatása, a kéz első észlelésétől amíg elhagyja a táblát</span>
+          <span class="lat-key"><i style="background:var(--phase-system)"></i>
+            <b>Rendszer</b> — a kéz elhagyta a táblát, eddig tartott felismerni és elfogadni a lépést</span>
+        </div>
+      </div>
     </div>
     <div class="card table-scroll" id="movesCard">
       <table id="movesTable"></table>
@@ -409,24 +446,56 @@ TEMPLATE = r"""<meta charset="utf-8">
     const section = document.getElementById('movesSection');
     if (!moves.length) { section.style.display = 'none'; return; }
     section.style.display = '';
+    const hasStatic = moves.some(m => m.latency_from_static_ms != null);
     const maxLatency = Math.max(...moves.map(m => m.latency_ms));
-    const theadHtml = `<thead><tr><th>#</th><th>Lépés</th><th>Frame-ek</th><th>Mód</th><th>Idő</th></tr></thead>`;
+
+    // Emberi olvasatu idotartam: masodperc 1 s felett, kulonben ms.
+    const dur = (ms) => ms >= 1000 ? `${fmt(ms / 1000, 2)} s` : `${fmt(ms, 0)} ms`;
+
+    const timeHeader = hasStatic
+      ? '<th>Mivel telt az idő <span style="font-weight:400;text-transform:none;font-size:10.5px">(kéz &rarr; rendszer)</span></th>'
+      : '<th>Idő</th>';
+    const theadHtml = `<thead><tr><th>#</th><th>Lépés</th><th>Frame-ek</th><th>Mód</th>${timeHeader}</tr></thead>`;
+
     const rowsHtml = moves.map(m => {
       const isFuzzy = m.mode.startsWith('fuzzy');
       const chip = isFuzzy
         ? `<span class="mode-chip mode-fuzzy"><i class="dot"></i>fuzzy</span> <span style="color:var(--text-muted)">${m.mode.replace('fuzzy ', '')}</span>`
         : `<span class="mode-chip mode-exact"><i class="dot"></i>exact</span>`;
+
+      // A sav teljes hossza a leghosszabb lepeshez viszonyitva.
       const pct = Math.max(2, (m.latency_ms / maxLatency) * 100);
-      const color = isFuzzy ? cvar('--status-warning') : cvar('--series-frame');
+
+      const sysMs = (hasStatic && m.latency_from_static_ms != null)
+        ? Math.min(m.latency_from_static_ms, m.latency_ms) : null;
+
+      let bar, nums;
+      if (sysMs != null) {
+        const handMs = Math.max(0, m.latency_ms - sysMs);
+        const sysPct = (sysMs / m.latency_ms) * 100;
+        // Idorendben: eloszor a kez (szurke), utana a rendszer (kek).
+        bar = `<span class="lat-bar" style="width:${pct}%">`
+            + `<span class="lat-hand" style="width:${100 - sysPct}%" title="kéz a táblán: ${dur(handMs)}"></span>`
+            + `<span class="lat-sys" style="width:${sysPct}%" title="rendszer: ${dur(sysMs)}"></span>`
+            + `</span>`;
+        nums = `<span class="n-hand">${dur(handMs)}</span>`
+             + `<span class="n-plus"> + </span>`
+             + `<span class="n-sys">${dur(sysMs)}</span>`
+             + `<span class="n-total"> = ${dur(m.latency_ms)}</span>`;
+      } else {
+        bar = `<span class="lat-bar" style="width:${pct}%"><span class="lat-hand" style="width:100%"></span></span>`;
+        nums = `<span class="n-total">${dur(m.latency_ms)}</span>`;
+      }
+
       return `<tr>
         <td>${m.move_num}</td>
         <td class="move-uci">${m.uci}</td>
         <td>${m.frames_to_detect}</td>
         <td>${chip}</td>
         <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="latency-track"><span class="latency-fill" style="width:${pct}%;background:${color}"></span></span>
-            <span>${fmt(m.latency_ms / 1000, 2)}s</span>
+          <div class="lat-row">
+            <span class="lat-track">${bar}</span>
+            <span class="lat-nums">${nums}</span>
           </div>
         </td>
       </tr>`;
@@ -447,6 +516,7 @@ TEMPLATE = r"""<meta charset="utf-8">
     const initRow = byName['init_total'];
     const totalMoveTime = moves.reduce((a, m) => a + m.latency_ms, 0);
     const fuzzyMoves = moves.filter(m => m.mode.startsWith('fuzzy')).length;
+    const staticVals = moves.map(m => m.latency_from_static_ms).filter(v => v != null);
     const stats = [
       ['Init idő', initRow ? fmt(initRow.mean_ms, 0) : '–', 'ms'],
       ['Feldolgozott frame', frameRow ? frameRow.count.toLocaleString('en-US') : '0', ''],
@@ -455,6 +525,7 @@ TEMPLATE = r"""<meta charset="utf-8">
       ['Felismert lépés', moves.length.toLocaleString('en-US'), ''],
       ['Fuzzy lépés', moves.length ? (fuzzyMoves + ' / ' + moves.length) : '–', ''],
       ['Össz. lépésidő', moves.length ? fmt(totalMoveTime / 1000, 1) : '–', moves.length ? 's' : ''],
+      ...(staticVals.length ? [['Pipeline late (mozgás után)', fmt(staticVals.reduce((a,b)=>a+b,0) / staticVals.length, 0), 'ms']] : []),
     ];
     document.getElementById('statStrip').innerHTML = stats.map(([label, value, unit]) =>
       `<div class="stat"><div class="label">${label}</div><div class="value">${value}${unit ? ` <small>${unit}</small>` : ''}</div></div>`
