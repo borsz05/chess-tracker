@@ -144,10 +144,14 @@ def render_board_diagram(fen: str, cell: int = 74) -> np.ndarray:
     pad = 26
     img = np.full((8 * cell + 2 * pad, 8 * cell + 2 * pad, 3), 245, dtype=np.uint8)
 
-    for r in range(8):
+    # A diagram sorai FORDITVA: a nyers rács (r, c) bal-felső mezője h1, a
+    # felhasználó viszont így találta jónak a felrakáshoz. A felülnézeti kép
+    # (draw_label_overlay) NEM tükrözött — ott az eredeti állás a helyes.
+    # Ez kizárólag megjelenítés, a címkézést nem érinti.
+    for gr in range(8):
         for c in range(8):
-            lab = labels[r][c]
-            x0, y0 = pad + c * cell, pad + r * cell
+            lab = labels[7 - gr][c]
+            x0, y0 = pad + c * cell, pad + gr * cell
             sq = chess.parse_square(lab.square)
             is_dark = (chess.square_file(sq) + chess.square_rank(sq)) % 2 == 0
             cv2.rectangle(img, (x0, y0), (x0 + cell, y0 + cell),
