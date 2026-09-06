@@ -92,21 +92,28 @@ DÖNTÉS: MobileNetV3-Small, 100 px, ImageNet-előtanított backbone.
 COLAB GYORSINDÍTÁS (cellánként)
 ===========================================================================
 
+    # A szkriptet NEM bemásolni kell, hanem a repót klónozni: importálja a
+    # vision/models/square_net.py-t (az architektúra egyetlen forrása).
     !git clone https://github.com/borsz05/chess-tracker
-    !git clone https://github.com/borsz05/sakk_modelltanitas          # train_new/ val_new/
+    !git clone https://github.com/borsz05/sakk_modelltanitas          # regi dataset
+    !git clone https://github.com/borsz05/modelltanitas_kepek         # uj, FEN-cimkezett gyujtes
     %cd chess-tracker
     !pip install -q onnx onnxruntime
+
+    from google.colab import drive; drive.mount('/content/drive')     # a checkpointnak
 
     # (opcionális) a benchmark Colab-CPU-n — csak a SORREND informatív,
     # az abszolút számok a célgépen mérendők:
     !python tools/train_square_classifier.py --benchmark-only
 
-    # tanítás — a régi GitHub dataset + az új FEN-címkézett gyűjtés együtt:
+    # tanítás — a régi GitHub dataset + az új FEN-címkézett gyűjtés együtt.
+    # A --eval-dir az UJ gyujtes val_new-ja: a `black` recall fo szama ott
+    # mérendő, mert a régi val telített (minden modell 100%-ot ad rajta).
     !python tools/train_square_classifier.py \
         --data-root ../sakk_modelltanitas \
-        --data-root /content/drive/MyDrive/chess_fen_data \
-        --arch mobilenet_v3_small --img-size 100 --epochs 60 \
-        --eval-dir /content/drive/MyDrive/chess_fen_data/val_new \
+        --data-root ../modelltanitas_kepek \
+        --arch mobilenet_v3_small --img-size 128 --epochs 60 \
+        --eval-dir ../modelltanitas_kepek/val_new \
         --out /content/drive/MyDrive/mnv3_squares.pt
 
 Adatszerkezet (minden --data-root alatt), az ImageFolder-konvenció szerint:
