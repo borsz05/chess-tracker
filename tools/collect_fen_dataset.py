@@ -144,10 +144,13 @@ def render_board_diagram(fen: str, cell: int = 74) -> np.ndarray:
     pad = 26
     img = np.full((8 * cell + 2 * pad, 8 * cell + 2 * pad, 3), 245, dtype=np.uint8)
 
-    for r in range(8):
+    # Megjelenitesi tukrozes (lasd draw_label_overlay): a nyers racs (r, c)
+    # bal-felso mezoje h1, mi viszont a1-et akarunk oda. A fuggoleges
+    # tukrozes a racs SORAIT forditja meg -> bal-felso a1, jobb-also h8.
+    for gr in range(8):
         for c in range(8):
-            lab = labels[r][c]
-            x0, y0 = pad + c * cell, pad + r * cell
+            lab = labels[7 - gr][c]
+            x0, y0 = pad + c * cell, pad + gr * cell
             sq = chess.parse_square(lab.square)
             is_dark = (chess.square_file(sq) + chess.square_rank(sq)) % 2 == 0
             cv2.rectangle(img, (x0, y0), (x0 + cell, y0 + cell),
@@ -508,10 +511,18 @@ def prompt_fen(current: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 def draw_label_overlay(img_warp: np.ndarray, det: DetectionResult, labels, check: dict | None, size: int = 640) -> np.ndarray:
-    vis = img_warp.copy()
+    # MEGJELENITESI tukrozes: a warp racsaban a bal-felso mezo h1, a bal-also
+    # a1. A felhasznalo a1-et akar bal-felul latni (ahogy a tablat felrakja),
+    # ezert a kepet fuggolegesen tukrozzuk. A CIMKEZEST ez nem erinti — csak
+    # azt valtoztatja, mit lat a kepernyon.
+    # A kepet ELOBB tukrozzuk, es a dobozokat mar a tukrozott koordinatakra
+    # rajzoljuk, hogy a feliratok ne alljanak fejre.
+    vis = cv2.flip(img_warp, 0)
+    H = vis.shape[0]
     for r in range(8):
         for c in range(8):
-            x0, y0, x1, y1 = det.bbox_warp[r][c]
+            bx0, by0, bx1, by1 = det.bbox_warp[r][c]
+            x0, y0, x1, y1 = bx0, H - by1, bx1, H - by0
             lab = labels[r][c]
             color = (0, 200, 0) if lab.occ == 1 else (0, 0, 255) if lab.occ == 2 else (160, 160, 160)
             cv2.rectangle(vis, (x0, y0), (x1, y1), color, 2)
