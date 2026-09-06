@@ -2,226 +2,260 @@
 """
 FEN-lista generálása a tanítóadat-gyűjtéshez (tools/collect_fen_dataset.py).
 
-MIÉRT NEM RANDOM ADATBÁZIS:
-    Egy puzzle-adatbázisból vett állásokat egyesével, a nulláról kellene
-    felrakni a fizikai táblán (~25 bábu/állás). Ehelyett a lista JÁTSZMÁK
-    egymás utáni pozícióiból áll: két szomszédos FEN között pontosan EGY
-    lépés a különbség, tehát a gyűjtés közben csak egy bábut kell mozgatni.
-    Teljes újrarakás csak játszmahatáron kell (alapállás).
+FORRÁS: Stockfish játszik önmaga ellen (véletlenítve a top-N lépés közül).
+Ez valódi, kifejlődött KÖZÉPJÁTÉK-állásokat ad — a tisztek nem a hátsó sorban
+ragadnak, a király sáncolt, a gyalogszerkezet változatos. A korábbi,
+véletlen-lépéses generátor pont ezért volt rossz: 25 félépés alatt a tisztek
+alig mozdultak ki.
+
+FELÉPÍTÉS (egy "adag"):
+    1. rész: --per-side állás EGY játszma középjátékából, normál tábla-állásban
+    2. rész: --per-side állás egy MÁSIK játszmából, 180 fokkal forgatva
+
+    Egy részen belül a szomszédos állások között EGY lépés a különbség, tehát
+    csak a legelső állást kell a nulláról felraknod (ehhez rajzol a gyűjtő
+    tábla-diagramot), utána mezőnként egy bábut mozgatsz.
+
+    A 180 fokos forgatás azért kell, mert enélkül a fekete bábuk soha nem
+    kerülnek a kamera alsó soraiba — élesben viszont oda is kerülnek.
 
 MIRE OPTIMALIZÁL:
-    - sok bábu marad a táblán (a lépésválasztás bünteti az ütéseket),
-    - mezőnkénti lefedettség: minden mező lásson black / white / empty
-      címkét is a lista során,
-    - kiemelten a FEKETE bábu SÖTÉT mezőn eset, mert élesben ez a hibás.
-
-    A generátor több jelölt-játszmát készít, majd mohón azokat választja ki,
-    amelyek a legtöbb ÚJ (mező, osztály) kombinációt hozzák.
+    - sok bábu a táblán (--min-pieces), hogy egy fotó sok ROI-t adjon
+    - nagy variancia: a kiinduló mezőjükről elmozdult bábuk száma maximális
+    - mezőnkénti lefedettség (minden mező lásson black/white/empty címkét is)
 
 Használat:
-    python -m tools.make_fen_positions                       # 150 állás -> positions.txt
-    python -m tools.make_fen_positions -n 200 -o sajat.txt
-    python -m tools.make_fen_positions --moves-per-game 25 --seed 7
+    python -m tools.make_fen_positions                     # 15+15 -> positions.txt
+    python -m tools.make_fen_positions --per-side 20 --min-pieces 28
+    python -m tools.make_fen_positions --seed 7 -o adag2.txt
 
 Utána:
-    python -m tools.collect_fen_dataset --session delelott_ablak --fen-file positions.txt
-
-A gyűjtőben `n` = következő FEN a listából.
+    python -m tools.collect_fen_dataset --session <fenyviszony> --fen-file positions.txt
 """
 from __future__ import annotations
 
 import argparse
 import random
+import shutil
 from pathlib import Path
 
 import chess
+import chess.engine
 
-# Sötét mező: a chess.SQUARES indexelésénél (file + rank) páros -> sötét.
 DARK = {sq for sq in chess.SQUARES if (chess.square_file(sq) + chess.square_rank(sq)) % 2 == 0}
+START = chess.Board()
 
 
 def square_class(board: chess.Board, sq: int) -> str:
-    piece = board.piece_at(sq)
-    if piece is None:
-        return "empty"
-    return "white" if piece.color == chess.WHITE else "black"
+    p = board.piece_at(sq)
+    return "empty" if p is None else ("white" if p.color == chess.WHITE else "black")
 
 
-def play_game(rng: random.Random, n_moves: int, capture_penalty: float) -> list[str]:
-    """Egy játszma pozíciói. A lépésválasztás bünteti az ütéseket, hogy sok
-    bábu maradjon a táblán (több ROI/fotó és több fekete bábu)."""
-    board = chess.Board()
-    # A KIINDULO allas is bekerul: enelkul a lista elso FEN-je mar egy lepes
-    # utan van, a felhasznalo viszont az alapallast rakja fel -> elteres a
-    # cimke es a valosag kozott (rossz cimkeju mentes).
-    fens: list[str] = [board.fen()]
-
-    for _ in range(n_moves - 1):
-        moves = list(board.legal_moves)
-        if not moves:
-            break
-        weights = [
-            (capture_penalty if board.is_capture(m) else 1.0)
-            for m in moves
-        ]
-        move = rng.choices(moves, weights=weights, k=1)[0]
-        board.push(move)
-        fens.append(board.fen())
-        if board.is_game_over():
-            break
-
-    return fens
-
-
-def rotate_fen_180(fen: str) -> str:
-    """A tábla 180°-os elforgatása.
-
-    Fizikailag: a felhasználó megfordítja a táblát, és a kamera így a fekete
-    sereget látja az alsó sorokban. Enélkül a fekete bábuk SOHA nem kerülnek
-    a kamera 1-3. sorába (a fekete a saját térfelén marad), és pont ez a
-    lefedettségi hiány a fekete-bábu problémánál.
-
-    A sáncjogot töröljük: elforgatás után értelmezhetetlen. Az állás nem
-    feltétlenül legális sakkállás, de a gyűjtőnek csak a bábuk elhelyezkedése
-    kell (FEN -> board_to_occupancy), nem generál belőle lépéseket.
-    """
-    board = chess.Board(fen)
-    rotated = board.transform(chess.flip_vertical).transform(chess.flip_horizontal)
-    rotated.set_castling_fen("-")
-    rotated.ep_square = None
-    return rotated.fen()
-
-
-def coverage_keys(fen: str) -> set[tuple[int, str]]:
-    """(mező, osztály) párok, amiket ez az állás lefed."""
-    board = chess.Board(fen)
+def coverage_keys(board: chess.Board) -> set[tuple[int, str]]:
     return {(sq, square_class(board, sq)) for sq in chess.SQUARES}
 
 
-def dark_black_count(fen: str) -> int:
-    """Hány fekete bábu áll sötét mezőn — ez a kritikus eset."""
-    board = chess.Board(fen)
+def n_pieces(board: chess.Board) -> int:
+    return len(board.piece_map())
+
+
+def n_developed(board: chess.Board) -> int:
+    """Hány bábu áll MÁS mezőn, mint az alapállásban — ez a 'variancia' mérőszáma."""
     n = 0
-    for sq in DARK:
-        p = board.piece_at(sq)
-        if p is not None and p.color == chess.BLACK:
+    for sq, piece in board.piece_map().items():
+        if START.piece_at(sq) != piece:
             n += 1
     return n
 
 
-def piece_count(fen: str) -> int:
-    return sum(1 for sq in chess.SQUARES if chess.Board(fen).piece_at(sq) is not None)
+def dark_black(board: chess.Board) -> int:
+    return sum(1 for sq in DARK if (p := board.piece_at(sq)) is not None and p.color == chess.BLACK)
 
 
-def select_games(games: list[list[str]], n_target: int, per_game: int) -> list[list[str]]:
-    """Mohó kiválasztás: mindig az a játszma jön, amelyik a legtöbb ÚJ
-    (mező, osztály) kombinációt adja hozzá a már kiválasztottakhoz."""
+def load_covered(labels_csv: Path) -> set[tuple[int, str]]:
+    """A mar osszegyujtott (mezo, osztaly) kombinaciok a gyujto labels.csv-jebol."""
+    import csv as _csv
+
     covered: set[tuple[int, str]] = set()
-    chosen: list[list[str]] = []
-    pool = list(games)
+    if not labels_csv.exists():
+        print(f"  (nincs meg ilyen fajl: {labels_csv} — a teljes lefedettsegre optimalizalok)")
+        return covered
+    with open(labels_csv, encoding="utf-8") as f:
+        for row in _csv.DictReader(f):
+            sq, color = row.get("square"), row.get("color")
+            if sq and color:
+                try:
+                    covered.add((chess.parse_square(sq), color))
+                except ValueError:
+                    continue
+    return covered
 
-    while pool and sum(len(g) for g in chosen) < n_target:
-        best_i, best_gain, best_dark = 0, -1, -1
-        for i, g in enumerate(pool):
-            keys: set[tuple[int, str]] = set()
-            for fen in g:
-                keys |= coverage_keys(fen)
-            gain = len(keys - covered)
-            dark = sum(dark_black_count(f) for f in g)
-            if gain > best_gain or (gain == best_gain and dark > best_dark):
-                best_i, best_gain, best_dark = i, gain, dark
 
-        g = pool.pop(best_i)
-        for fen in g:
-            covered |= coverage_keys(fen)
-        chosen.append(g[:per_game])
+def rotate_180(board: chess.Board) -> chess.Board:
+    """A tábla 180 fokos elforgatása (a felhasználó fizikailag megfordítja).
 
-    return chosen
+    A sáncjog és az en passant értelmezhetetlen utána, ezért töröljük. Az állás
+    nem feltétlenül legális sakkállás, de a gyűjtőnek csak a bábuk elhelyezése
+    kell (FEN -> board_to_occupancy), lépéseket nem generál belőle.
+    """
+    r = board.transform(chess.flip_vertical).transform(chess.flip_horizontal)
+    r.set_castling_fen("-")
+    r.ep_square = None
+    return r
+
+
+def play_game(engine: chess.engine.SimpleEngine, rng: random.Random,
+              plies: int, depth: int, multipv: int) -> list[chess.Board]:
+    """Stockfish önmaga ellen, a top-N lépés közül véletlenszerűen választva.
+
+    A véletlenítés adja a varianciát: enélkül minden játszma ugyanaz lenne.
+    """
+    board = chess.Board()
+    out: list[chess.Board] = []
+    limit = chess.engine.Limit(depth=depth)
+
+    for _ in range(plies):
+        if board.is_game_over():
+            break
+        try:
+            info = engine.analyse(board, limit, multipv=multipv)
+        except chess.engine.EngineError:
+            break
+        moves = [i["pv"][0] for i in info if i.get("pv")]
+        if not moves:
+            break
+        board.push(rng.choice(moves))
+        out.append(board.copy())
+
+    return out
+
+
+def best_window(positions: list[chess.Board], length: int, min_pieces: int) -> list[chess.Board] | None:
+    """A legjobb `length` hosszú, EGYMÁST KÖVETŐ szakasz a játszmából.
+
+    Egymást követő állásokat választunk, mert így két fotó között csak egy
+    bábut kell mozgatni. A szakasz pontszáma: a kifejlődöttség (variancia)
+    és a fekete-sötét mezőn arány, azzal a feltétellel, hogy végig legyen
+    elég bábu a táblán.
+    """
+    best, best_score = None, -1.0
+    for i in range(len(positions) - length + 1):
+        win = positions[i:i + length]
+        if min(n_pieces(b) for b in win) < min_pieces:
+            continue
+        score = sum(n_developed(b) for b in win) + 0.5 * sum(dark_black(b) for b in win)
+        if score > best_score:
+            best, best_score = win, score
+    return best
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-n", "--count", type=int, default=150, help="hány FEN kerüljön a listába (alap: 150)")
+    ap.add_argument("--per-side", type=int, default=15, help="állás orientációnként (alap: 15 + 15 forgatva)")
+    ap.add_argument("--min-pieces", type=int, default=26, help="ennyi bábu legyen legalább a táblán végig")
     ap.add_argument("-o", "--out", type=Path, default=Path("positions.txt"))
-    ap.add_argument("--moves-per-game", type=int, default=30,
-                    help="hány pozíció egy játszmából (ennyi lépést kell egymás után megtenned)")
-    ap.add_argument("--capture-penalty", type=float, default=0.15,
-                    help="ütő lépések relatív súlya (kisebb = több bábu marad a táblán)")
-    ap.add_argument("--pool", type=int, default=60, help="ennyi jelölt játszmából válogat")
+    ap.add_argument("--engine", default=shutil.which("stockfish") or "/usr/games/stockfish")
+    ap.add_argument("--depth", type=int, default=8, help="Stockfish keresési mélység (kicsi is elég ide)")
+    ap.add_argument("--multipv", type=int, default=4, help="ennyi legjobb lépés közül választ véletlenül (variancia)")
+    ap.add_argument("--plies", type=int, default=44, help="ennyi félépést játszik le egy játszmában")
+    ap.add_argument("--games", type=int, default=6, help="ennyi jelölt játszmát generál, a legjobb kettőt használja")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cover-gaps", type=Path, default=None,
+                    help="a mar osszegyujtott adat labels.csv-je: az uj adag a MEG HIANYZO "
+                         "(mezo, osztaly) kombinaciokra optimalizal (pl. data_fen/labels.csv)")
     args = ap.parse_args()
 
+    if not Path(args.engine).exists():
+        raise SystemExit(f"Stockfish nem talalhato: {args.engine}\n  telepites: sudo apt install stockfish")
+
     rng = random.Random(args.seed)
+    print(f"Stockfish: {args.engine}  (depth={args.depth}, multipv={args.multipv})")
 
-    pool = [
-        play_game(rng, args.moves_per_game, args.capture_penalty)
-        for _ in range(args.pool)
-    ]
-    pool = [g for g in pool if len(g) >= args.moves_per_game // 2]
+    games: list[list[chess.Board]] = []
+    with chess.engine.SimpleEngine.popen_uci(args.engine) as engine:
+        for gi in range(args.games):
+            g = play_game(engine, rng, args.plies, args.depth, args.multipv)
+            win = best_window(g, args.per_side, args.min_pieces)
+            if win:
+                games.append(win)
+                print(f"  {gi + 1}. jatszma: {len(g)} allas -> szakasz kivalasztva "
+                      f"(babu {min(n_pieces(b) for b in win)}-{max(n_pieces(b) for b in win)}, "
+                      f"elmozdult atlag {sum(n_developed(b) for b in win) / len(win):.1f})")
+            else:
+                print(f"  {gi + 1}. jatszma: nincs megfelelo szakasz (tul keves babu maradt)")
 
-    games = select_games(pool, args.count, args.moves_per_game)
+    if len(games) < 2:
+        raise SystemExit("Nem sikerult ket hasznalhato szakaszt generalni — probald kisebb --min-pieces ertekkel.")
 
-    lines: list[str] = [
+    # A ket szakasz kivalasztasa PARBAN, a kozos lefedettsegre optimalizalva.
+    # Kulon-kulon a legfejlettebb kettot valasztani rossz: ugyanazokat a
+    # mezoket fedhetik le. Mivel ugyanezt a listat fotozod le minden
+    # fenyviszonyban, a lefedettseg egyszer dol el — itt.
+    cov_cache = [set().union(*(coverage_keys(b) for b in w)) for w in games]
+    rot_cache = [[rotate_180(b) for b in w] for w in games]
+    rot_cov = [set().union(*(coverage_keys(b) for b in w)) for w in rot_cache]
+
+    already = load_covered(args.cover_gaps) if args.cover_gaps else set()
+    if args.cover_gaps:
+        print(f"\n  mar osszegyujtve ({args.cover_gaps}): {len(already)}/192 mezo-osztaly "
+              f"-> az uj adag a hianyzo {192 - len(already)}-re optimalizal")
+
+    best_pair, best_cov = (0, 1), -1
+    for i in range(len(games)):
+        for j in range(len(games)):
+            if i == j:
+                continue
+            # Csak az UJ lefedettseg szamit: amit mar begyujtottel, azt nem
+            # eri meg megegyszer lefotozni.
+            score = len((cov_cache[i] | rot_cov[j]) - already)
+            if score > best_cov:
+                best_pair, best_cov = (i, j), score
+
+    i, j = best_pair
+    normal, rotated = games[i], rot_cache[j]
+    print(f"\n  kivalasztott par: {i + 1}. (normal) + {j + 1}. (forgatva) — egyutt {best_cov}/192 mezo-osztaly")
+
+    lines = [
         "# FEN-lista a tanitoadat-gyujteshez (tools/make_fen_positions.py)",
-        "# Ket egymast koveto FEN kozott EGY lepes a kulonbseg -> csak egy babut mozgass.",
-        "# Uj jatszma kezdetenel allitsd vissza az ALAPALLAST.",
+        "# Forras: Stockfish onmaga ellen, kozepjatek-allasok (kifejlodott tisztek).",
+        "# Egy reszen belul ket szomszedos allas kozott EGY lepes a kulonbseg.",
+        "# A gyujto minden allashoz kirajzolja a tablat (o = diagram ki/be).",
         "",
+        f"# ===== 1. resz ({len(normal)} allas) — NORMAL tabla-allas =====",
+        "# Az ELSO allast a nullarol rakd fel a diagram alapjan, utana lepesenkent.",
     ]
-
-    total = 0
-    all_covered: set[tuple[int, str]] = set()
-    dark_black_total = 0
-    piece_counts: list[int] = []
-
-    for gi, g in enumerate(games, 1):
-        if total >= args.count:
-            break
-        # Minden MASODIK jatszma 180°-kal forgatott: igy a fekete babuk a
-        # kamera also soraiban is megjelennek. Valtakozva (nem a lista masodik
-        # feleben), hogy egy rovidebb reszlet is lefedje mindket allast — a
-        # gyakorlatban ritkan fotozza le valaki mind a 150 allast egy
-        # fenyviszony mellett.
-        rotate = gi % 2 == 0
-        if rotate:
-            g = [rotate_fen_180(f) for f in g]
-            lines.append(f"# ---- {gi}. jatszma — FORDITSD MEG A TABLAT 180 FOKKAL, "
-                         f"rakd fel az alapallast a megforditott tablan ----")
-        else:
-            lines.append(f"# ---- {gi}. jatszma — ALLITSD VISSZA AZ ALAPALLAST, majd lepesenkent kovesd ----")
-        for fen in g:
-            if total >= args.count:
-                break
-            lines.append(fen)
-            all_covered |= coverage_keys(fen)
-            dark_black_total += dark_black_count(fen)
-            piece_counts.append(piece_count(fen))
-            total += 1
-        lines.append("")
+    lines += [b.fen() for b in normal]
+    lines += [
+        "",
+        f"# ===== 2. resz ({len(rotated)} allas) — FORDITSD MEG A TABLAT 180 FOKKAL =====",
+        "# Ismet a nullarol rakd fel az elso allast a diagram alapjan.",
+    ]
+    lines += [b.fen() for b in rotated]
 
     args.out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # --- statisztika ------------------------------------------------------
-    missing = [
-        (chess.square_name(sq), cls)
-        for sq in chess.SQUARES
-        for cls in ("empty", "white", "black")
-        if (sq, cls) not in all_covered
-    ]
+    allb = normal + rotated
+    cov: set[tuple[int, str]] = set()
+    for b in allb:
+        cov |= coverage_keys(b)
+    missing = [(chess.square_name(sq), c) for sq in chess.SQUARES
+               for c in ("empty", "white", "black") if (sq, c) not in cov]
+    pc = [n_pieces(b) for b in allb]
+    dev = [n_developed(b) for b in allb]
 
+    print()
     print(f"Kiirva: {args.out.resolve()}")
-    print(f"  allasok         : {total}  ({len(games)} jatszma, jatszmankent max {args.moves_per_game})")
-    print(f"  babu/allas       : atlag {sum(piece_counts)/max(1,len(piece_counts)):.1f}  "
-          f"min {min(piece_counts)}  max {max(piece_counts)}")
-    print(f"  ROI osszesen     : {total * 64} (mezo-kivagas, ha minden allast lefotozol)")
-    print(f"  fekete babu sotet mezon: osszesen {dark_black_total}  "
-          f"(atlag {dark_black_total/max(1,total):.1f} allasonkent)")
-    print(f"  (mezo, osztaly) lefedettseg: {len(all_covered)}/192")
+    print(f"  allasok            : {len(allb)}  ({len(normal)} normal + {len(rotated)} forgatott)")
+    print(f"  babu/allas         : atlag {sum(pc) / len(pc):.1f}  (min {min(pc)}, max {max(pc)})")
+    print(f"  elmozdult babu/allas: atlag {sum(dev) / len(dev):.1f}  (min {min(dev)}, max {max(dev)})"
+          f"   <- variancia")
+    print(f"  fekete babu sotet mezon: atlag {sum(dark_black(b) for b in allb) / len(allb):.1f}")
+    print(f"  ROI osszesen       : {len(allb) * 64}")
+    print(f"  (mezo, osztaly) lefedettseg: {len(cov)}/192")
     if missing:
-        print(f"  HIANYZO kombinaciok ({len(missing)}): "
-              + ", ".join(f"{s}:{c}" for s, c in missing[:20])
-              + (" ..." if len(missing) > 20 else ""))
-    else:
-        print("  minden mezo latott black/white/empty cimket is.")
+        print(f"  hianyzo ({len(missing)}): " + ", ".join(f"{s}:{c}" for s, c in missing[:16])
+              + (" ..." if len(missing) > 16 else ""))
 
 
 if __name__ == "__main__":

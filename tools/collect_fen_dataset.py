@@ -70,7 +70,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.fen_labels import SquareLabel, fen_to_raw_labels, fen_to_raw_occupancy  # noqa: E402
+from tools.fen_labels import EMPTY_SYMBOL, SquareLabel, fen_to_raw_labels, fen_to_raw_occupancy  # noqa: E402
 from vision.app.config import AppConfig  # noqa: E402
 from vision.app.run_live import LiveConfig  # noqa: E402
 from vision.pipeline.batch_classifier import crop_with_context  # noqa: E402
@@ -129,6 +129,49 @@ def parse_args() -> argparse.Namespace:
 # font-könyvtár miatt elrontja a címet (a címsorban "?" jelenik meg).
 WIN_CAMERA = "FEN gyujto - kamera"
 WIN_OVERLAY = "FEN cimkek a warpolt tablan (zold=feher, piros=fekete, sarga=elteres)"
+WIN_DIAGRAM = "Felrakando allas (a kamerakep allasaban)"
+
+
+def render_board_diagram(fen: str, cell: int = 74) -> np.ndarray:
+    """Kirajzolja a felrakandó állást, A KAMERAKÉP ORIENTÁCIÓJÁBAN.
+
+    A mezőket a `fen_to_raw_labels` nyers (r, c) rácsából vesszük — ugyanabból,
+    amiből a címkézés is dolgozik. Így a diagram és a kamerakép elrendezése
+    konstrukció szerint egyezik (nem lehet elcsúszni), és a képernyőt a
+    kameraablak mellé téve mezőről mezőre összevethető.
+    """
+    labels = fen_to_raw_labels(fen)
+    pad = 26
+    img = np.full((8 * cell + 2 * pad, 8 * cell + 2 * pad, 3), 245, dtype=np.uint8)
+
+    for r in range(8):
+        for c in range(8):
+            lab = labels[r][c]
+            x0, y0 = pad + c * cell, pad + r * cell
+            sq = chess.parse_square(lab.square)
+            is_dark = (chess.square_file(sq) + chess.square_rank(sq)) % 2 == 0
+            cv2.rectangle(img, (x0, y0), (x0 + cell, y0 + cell),
+                          (140, 150, 160) if is_dark else (232, 238, 244), -1)
+            cv2.rectangle(img, (x0, y0), (x0 + cell, y0 + cell), (200, 200, 200), 1)
+
+            # mezőnév halványan, hogy a felrakásnál ellenőrizhető legyen
+            cv2.putText(img, lab.square, (x0 + 3, y0 + cell - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, (120, 120, 120), 1, cv2.LINE_AA)
+
+            if lab.symbol == EMPTY_SYMBOL:
+                continue
+
+            cx, cy = x0 + cell // 2, y0 + cell // 2 - 4
+            white = lab.symbol.isupper()
+            cv2.circle(img, (cx, cy), cell // 3, (255, 255, 255) if white else (35, 35, 35), -1)
+            cv2.circle(img, (cx, cy), cell // 3, (30, 30, 30) if white else (230, 230, 230), 2)
+            ch = lab.symbol.upper()
+            (tw, th), _ = cv2.getTextSize(ch, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
+            cv2.putText(img, ch, (cx - tw // 2, cy + th // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (20, 20, 20) if white else (245, 245, 245),
+                        2, cv2.LINE_AA)
+
+    return img
 
 
 def _grab_ok(cap: cv2.VideoCapture, tries: int = 10) -> bool:
@@ -574,6 +617,11 @@ def main() -> None:
     # létrehozott) AUTOSIZE ablak néha pár pixelesre zsugorodik.
     cv2.namedWindow(WIN_CAMERA, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(WIN_CAMERA, args.width, args.height)
+    cv2.namedWindow(WIN_DIAGRAM, cv2.WINDOW_NORMAL)
+
+    # A felrakandó állás diagramja — FEN-váltáskor frissül, nem frame-enként.
+    diagram = render_board_diagram(fen)
+    cv2.imshow(WIN_DIAGRAM, diagram)
 
     read_fail_streak = 0
 
@@ -640,6 +688,8 @@ def main() -> None:
                     labels = fen_to_raw_labels(fen)
                     fen_occ = fen_to_raw_occupancy(fen)
                     last_check = None
+                    diagram = render_board_diagram(fen)
+                    cv2.imshow(WIN_DIAGRAM, diagram)
                     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}  -> split: {choose_split(args.split_mode, args.val_every, fen, shot_index)}")
                     print_position_help(fen, prev_fen)
                     print("  Állítsd fel a táblát, ellenőrizd az overlay-t, majd SPACE.")
