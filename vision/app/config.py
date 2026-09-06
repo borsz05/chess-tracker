@@ -6,7 +6,7 @@ from pathlib import Path
 from vision.pipeline.stabilizer import StateStabilizer
 
 
-DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "resnet18_best_topdown.pt"
+DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "mnv3_squares_128.pt"
 
 
 @dataclass
