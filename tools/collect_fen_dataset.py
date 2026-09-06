@@ -116,6 +116,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-check-model", action="store_true", help="ne futtassa a modell-alapú egyezés-ellenőrzést")
     p.add_argument("--max-mismatch", type=int, default=14,
                    help="ennyi vagy több eltérő mező a FEN és a modell között -> a fotót NEM menti (--force felülírja)")
+    p.add_argument("--auto-orient-margin", type=int, default=12,
+                   help="ennyivel kevesebb elteres kell egy masik szimmetriahoz, hogy automatikusan ahhoz igazitsuk a cimkezest")
+    p.add_argument("--auto-orient-max-err", type=int, default=6,
+                   help="az igazitott szimmetria onmagaban legfeljebb ennyi mezoben terhet el")
+    p.add_argument("--no-auto-orient", action="store_true", help="az automatikus orientacio-igazitas kikapcsolasa")
     p.add_argument("--force", action="store_true", help="mentés az ellenőrzés figyelmeztetései ellenére is")
     return p.parse_args()
 
@@ -317,6 +322,25 @@ class ModelChecker:
         return self.model.predict_rois(flat).labels.reshape(8, 8).astype(np.int32)
 
     @staticmethod
+    def apply_symmetry(grid: np.ndarray | list[list], name: str):
+        """Ugyanaz a transzformacio, mint a `symmetries`-ben — de barmilyen
+        8x8 racsra (pl. SquareLabel objektumokra) alkalmazhato."""
+        if isinstance(grid, np.ndarray):
+            a = grid
+        else:
+            a = np.empty((8, 8), dtype=object)
+            for r in range(8):
+                for c in range(8):
+                    a[r, c] = grid[r][c]
+        k = int(name.replace("+flip", "").replace("rot", "")) // 90
+        out = np.rot90(a, k)
+        if name.endswith("+flip"):
+            out = np.fliplr(out)
+        if isinstance(grid, np.ndarray):
+            return np.ascontiguousarray(out)
+        return [[out[r, c] for c in range(8)] for r in range(8)]
+
+    @staticmethod
     def symmetries(grid: np.ndarray) -> list[tuple[str, np.ndarray]]:
         out = []
         for k in range(4):
@@ -364,7 +388,7 @@ class Writer:
         self._jsonl.close()
 
     def write_shot(self, *, frame, rois, labels: list[list[SquareLabel]], fen: str, split: str,
-                   cam: dict, check: dict | None, shot_id: str) -> int:
+                   cam: dict, check: dict | None, shot_id: str, orient: str = "rot0") -> int:
         ts = time.strftime("%Y%m%d_%H%M%S") + f"_{int((time.time() % 1) * 1000):03d}"
         base = f"{self.session}_{ts}"
         if self.save_frames:
@@ -391,6 +415,7 @@ class Writer:
                 saved += 1
         self._jsonl.write(json.dumps({
             "shot_id": shot_id, "base": base, "session": self.session, "fen": fen, "split": split, "n_rois": saved,
+            "orient": orient,   # melyik szimmetriaval lett cimkezve (auto-igazitas)
             "camera": cam, "crop": {"context": self.cfg.context, "cell": self.cfg.cell, "inner_pad_ratio": self.cfg.inner_pad_ratio},
             "model_check": None if check is None else {
                 "n_mismatch": check["n_mismatch"], "best_symmetry": check["best_symmetry"], "best_n": check["best_n"],
@@ -729,22 +754,49 @@ def main() -> None:
                             continue
                     img_warp, rois = warp_and_crop(frame, det, cfg)
                     check = checker.check(rois, fen_occ) if checker is not None else None
+                    shot_labels, shot_sym = labels, "rot0"
                     if check is not None:
                         last_check = check
-                        if check["best_symmetry"] != "rot0" and check["n_mismatch"] - check["best_n"] >= 6:
+                        # AUTOMATIKUS ORIENTACIO-IGAZITAS.
+                        # A board_detector racsanak orientacioja nem garantalt
+                        # (ugyanaz a fizikai tabla mas racsallast adhat), a
+                        # fen_labels viszont FIX lekepezest feltetelez. Ha egy
+                        # masik szimmetria egyertelmuen jobban illeszkedik, azt
+                        # hasznaljuk a CIMKEZESHEZ — igy nem a felhasznalonak
+                        # kell a tablat forgatnia.
+                        #
+                        # Szigoru feltetel, mert a dontes a cimkeket befolyasolja:
+                        # nagy kulonbseg ES onmagaban is jo illeszkedes kell.
+                        # 64 mezobol donteni robusztus: rossz szimmetria tucatnyi
+                        # elteressel jarna.
+                        #
+                        # CSAK A GYUJTOBEN. Az eles pipeline (raw_to_standard)
+                        # valtozatlan — ott a python-chess iranyitas fix.
+                        if (not args.no_auto_orient
+                                and check["best_symmetry"] != "rot0"
+                                and check["n_mismatch"] - check["best_n"] >= args.auto_orient_margin
+                                and check["best_n"] <= args.auto_orient_max_err):
+                            shot_sym = check["best_symmetry"]
+                            shot_labels = ModelChecker.apply_symmetry(labels, shot_sym)
+                            print(f"  ~ orientacio-igazitas: '{shot_sym}' ({check['best_n']} elteres az alap "
+                                  f"{check['n_mismatch']} helyett) — a cimkezes ehhez igazodik")
+                        elif check["best_symmetry"] != "rot0" and check["n_mismatch"] - check["best_n"] >= 6:
                             print(f"  !!! ORIENTÁCIÓ-GYANÚ: a FEN-rács '{check['best_symmetry']}' változata {check['best_n']} eltérést ad, "
-                                  f"az alap {check['n_mismatch']}-t. Ellenőrizd a tábla állását / a FEN-t az overlay-en.")
+                                  f"az alap {check['n_mismatch']}-t — de nem elég egyértelmű az automatikus igazításhoz.")
                             if not args.force:
                                 print("      NEM mentem (--force felülírja).")
                                 break
-                        if check["n_mismatch"] >= args.max_mismatch:
-                            sq = ", ".join(labels[r][c].square for r, c in check["mismatch"][:12])
-                            print(f"  !!! {check['n_mismatch']} mező eltér a modell szerint ({sq}...) — rossz FEN vagy felállítás?")
+                        # Igazitas utan a tenyleges elteres a best_n.
+                        eff_mismatch = check["best_n"] if shot_sym != "rot0" else check["n_mismatch"]
+                        if eff_mismatch >= args.max_mismatch:
+                            sq = ", ".join(shot_labels[r][c].square for r, c in check["mismatch"][:12])
+                            print(f"  !!! {eff_mismatch} mező eltér a modell szerint ({sq}...) — rossz FEN vagy felállítás?")
                             if not args.force:
                                 print("      NEM mentem (--force felülírja).")
                                 break
-                    saved = writer.write_shot(frame=frame, rois=rois, labels=labels, fen=fen, split=split,
-                                              cam=camera_state(cap), check=check, shot_id=shot_id)
+                    saved = writer.write_shot(frame=frame, rois=rois, labels=shot_labels, fen=fen, split=split,
+                                              cam=camera_state(cap), check=check, shot_id=shot_id,
+                                              orient=shot_sym)
                     saved_total += saved
                 if saved_total:
                     shot_index += 1
