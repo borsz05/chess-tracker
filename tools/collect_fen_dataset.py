@@ -628,6 +628,8 @@ def main() -> None:
     cv2.imshow(WIN_DIAGRAM, diagram)
 
     read_fail_streak = 0
+    live_check_t = 0.0          # az elo orientacio-ellenorzes utolso futasa
+    LIVE_CHECK_EVERY_S = 1.2    # a 64 mezo klasszifikalasa ~64 ms, ezert ritkitva
 
     try:
         while True:
@@ -645,6 +647,16 @@ def main() -> None:
             brightness.append(board_mean_brightness(gray, det))
             drift = float(np.std(brightness)) if len(brightness) >= 15 else 0.0
 
+            # Elo orientacio-ellenorzes: igy a tabla forgatasa kozben AZONNAL
+            # latszik, mikor all jol — nem kell SPACE-t nyomni hozza.
+            if checker is not None and det is not None and (time.time() - live_check_t) > LIVE_CHECK_EVERY_S:
+                live_check_t = time.time()
+                try:
+                    _, _rois = warp_and_crop(frame, det, cfg)
+                    last_check = checker.check(_rois, fen_occ)
+                except Exception:
+                    pass
+
             preview = frame.copy()
             split = choose_split(args.split_mode, args.val_every, fen, shot_index)
             put_text(preview, f"[{args.session}] fotók: {writer.n_shots}  ROI: {writer.n_rois}  "
@@ -654,8 +666,12 @@ def main() -> None:
             if drift > args.drift_warn:
                 put_text(preview, f"!!! FÉNYERŐ INGADOZIK (std={drift:.1f}) — auto-exposure be van kapcsolva?", 106, (0, 0, 255))
             if last_check is not None:
-                col = (0, 255, 0) if last_check["n_mismatch"] < 6 else (0, 165, 255)
-                put_text(preview, f"modell vs FEN: {last_check['n_mismatch']} eltérő mező (legjobb szimmetria: {last_check['best_symmetry']}, {last_check['best_n']})", 132, col)
+                n, bs, bn = last_check["n_mismatch"], last_check["best_symmetry"], last_check["best_n"]
+                if bs != "rot0" and n - bn >= 6:
+                    put_text(preview, f"!!! ORIENTACIO: forgasd a tablat! ({bs} illeszkedne: {bn} elteres, most {n})", 132, (0, 0, 255))
+                else:
+                    col = (0, 255, 0) if n < 6 else (0, 165, 255)
+                    put_text(preview, f"orientacio OK | modell vs FEN: {n} eltero mezo", 132, col)
             if det is not None and det.centers_img is not None:
                 for r in range(8):
                     for c in range(8):
