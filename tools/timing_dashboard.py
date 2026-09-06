@@ -86,7 +86,7 @@ def collect_runs() -> dict:
 TEMPLATE = r"""<!DOCTYPE html>
 <html lang="hu" data-theme="light">
 <meta charset="utf-8">
-<title>Pipeline Telemetry</title>
+<title>Időzítési napló — chess-tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Literata:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -230,27 +230,27 @@ TEMPLATE = r"""<!DOCTYPE html>
   tbody td { padding: 7px 10px; border-bottom: 1px solid var(--surface-2); font-family: var(--mono); }
   tbody tr:last-child td { border-bottom: none; }
   .move-uci { font-weight: 600; color: var(--text-primary); }
-  .mode-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .mode-exact { background: color-mix(in oklab, var(--status-good) 16%, transparent); color: var(--status-good); }
-  .mode-fuzzy { background: color-mix(in oklab, var(--status-warning) 18%, transparent); color: var(--status-warning); }
-  .mode-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  /* Az egyezes modja sima szoveg — a kis keret es a potty felesleges diszites
+     volt, a szinbeli megkulonboztetes eleg. */
+  .mode-exact { color: var(--status-good); font-weight: 500; }
+  .mode-fuzzy { color: var(--status-warning); font-weight: 500; }
   /* Lépésenkénti idő: a sáv IDŐRENDBEN olvasandó balról jobbra.
      Előbb a kéz mozgatja a bábut, utána dolgozik a rendszer — ezért a
      rendszer-szegmens a sáv VÉGÉN van (korábban az elején volt, ami
      félreérthető volt). */
-  .lat-row { display: flex; align-items: center; gap: 14px; }
-  /* A sav utan NINCS lathato "sin": a kitoltetlen resz felrevezetoen ugy
-     nezett ki, mintha az elfogadas utan is tortenne meg valami. A sav helye
-     viszont fix szeles marad, hogy a mellette allo szamok egy vonalban
-     alljanak minden sorban. */
-  .lat-track { position: relative; height: 16px; width: 190px; flex: 0 0 190px;
-               background: transparent; }
+  /* Elrendezes: BALRA a szamok fix szeles oszlopban (igy egy vonalban
+     allnak), JOBBRA a sav, ami a TENYLEGES idotartammal aranyos — igy a
+     lepesek kozotti kulonbseg is lathato. Nincs "sin": a sav ott er veget,
+     ahol az ido, tehat semmi nem sugallja, hogy az elfogadas utan meg
+     tortenne valami. */
+  .lat-row { display: flex; align-items: center; gap: 16px; }
+  .lat-nums { flex: 0 0 190px; font-size: 12px; white-space: nowrap; }
+  .lat-barwrap { flex: 1 1 auto; min-width: 90px; }
   /* Szogletes szegmensek: a lekerekites egy nagyon rovid rendszer-szakaszbol
      elvette volna a lathato reszt. */
-  .lat-bar { position: absolute; inset: 0; display: flex; border-radius: 2px 0 0 2px; overflow: hidden; }
+  .lat-bar { display: flex; height: 15px; border-radius: 2px 0 0 2px; overflow: hidden; }
   .lat-hand { background: var(--phase-hand); }
   .lat-sys  { background: var(--phase-system); border-radius: 0; }
-  .lat-nums { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
   .n-hand { color: var(--text-secondary); font-weight: 600; }
   .n-sys  { color: var(--phase-system); font-weight: 700; }
   .n-plus, .n-total { color: var(--text-muted); font-weight: 400; }
@@ -269,9 +269,9 @@ TEMPLATE = r"""<!DOCTYPE html>
   <header>
     <div class="header-top">
       <div style="display:flex;flex-direction:column;gap:6px;">
-        <div class="eyebrow">chess-tracker &middot; vision pipeline profiler</div>
-        <h1 id="pageTitle">Pipeline Telemetry</h1>
-        <div class="subhead">Futásonkénti időzítési napló: inicializálás, kamera-frame-ek feldolgozása és a felismert lépések. A cél megtalálni, mely komponens viszi a legtöbb időt és hol vannak kiugró (lassú) frame-ek.</div>
+        <div class="eyebrow">chess-tracker &middot; képfeldolgozás időmérés</div>
+        <h1 id="pageTitle">Időzítési napló</h1>
+        <div class="subhead">Futásonkénti időzítési napló: inicializálás, a képkockák feldolgozása és a felismert lépések. A cél megtalálni, mely komponens viszi a legtöbb időt és hol vannak kiugróan lassú képkockák.</div>
       </div>
       <div class="run-picker">
         <label for="runSelect">Futás</label>
@@ -292,8 +292,8 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   <section>
     <div class="section-head">
-      <h2>Per-frame pipeline komponensek</h2>
-      <div class="section-note">Minden kamera-frame-nél lefutó lépések átlaga (sáv) és p95-e (jelölő), logaritmikus skálán.</div>
+      <h2>Képkockánként futó lépések</h2>
+      <div class="section-note">Minden képkockánál lefutó lépések átlaga (sáv) és p95-e (jelölő), logaritmikus skálán.</div>
     </div>
     <div class="card" id="hotBars"></div>
   </section>
@@ -464,32 +464,35 @@ TEMPLATE = r"""<!DOCTYPE html>
     // Emberi olvasatu idotartam: masodperc 1 s felett, kulonben ms.
     const dur = (ms) => ms >= 1000 ? `${fmt(ms / 1000, 2)} s` : `${fmt(ms, 0)} ms`;
 
+    // A sav hossza a leghosszabb lepeshez aranyos, igy a lepesek kozotti
+    // idokulonbseg is lathato. A szamok BALRA, fix szeles oszlopban allnak,
+    // ezert minden sorban egy vonalban vannak.
+    const maxLatency = Math.max(...moves.map(m => m.latency_ms));
+
     const timeHeader = hasStatic
-      ? '<th>Mivel telt az idő <span style="font-weight:400;text-transform:none;font-size:10.5px">(arány: kéz &rarr; rendszer)</span></th>'
+      ? '<th>Mivel telt az idő <span style="font-weight:400;text-transform:none;font-size:10.5px">(kéz &rarr; rendszer)</span></th>'
       : '<th>Idő</th>';
-    const theadHtml = `<thead><tr><th>#</th><th>Lépés</th><th>Frame-ek</th><th>Mód</th>${timeHeader}</tr></thead>`;
+    const theadHtml = `<thead><tr><th>#</th><th>Lépés</th><th>Képkockák száma</th><th>Egyezés</th>${timeHeader}</tr></thead>`;
 
     const rowsHtml = moves.map(m => {
       const isFuzzy = m.mode.startsWith('fuzzy');
-      const chip = isFuzzy
-        ? `<span class="mode-chip mode-fuzzy"><i class="dot"></i>fuzzy</span> <span style="color:var(--text-muted)">${m.mode.replace('fuzzy ', '')}</span>`
-        : `<span class="mode-chip mode-exact"><i class="dot"></i>exact</span>`;
+      const modeCell = isFuzzy
+        ? `<span class="mode-fuzzy">közelítő egyezés</span> <span style="color:var(--text-muted)">${m.mode.replace('fuzzy ', '')}</span>`
+        : `<span class="mode-exact">pontos egyezés</span>`;
 
-      // A sav MINDIG teljes szeles, es az ARANYT mutatja (mivel telt az ido).
-      // Ha a hosszat a leghosszabb lepeshez skalaznank, egyetlen kiugro
-      // (pl. 15 s-os) lepes 9-33 pixelre zsugoritana az osszes tobbit, es a
-      // bontasuk olvashatatlan lenne. A tenyleges idotartamok a szamokban.
       const sysMs = (hasStatic && m.latency_from_static_ms != null)
         ? Math.min(m.latency_from_static_ms, m.latency_ms) : null;
+      const pct = Math.max(1.5, (m.latency_ms / maxLatency) * 100);
 
       let bar, nums;
       if (sysMs != null) {
         const handMs = Math.max(0, m.latency_ms - sysMs);
-        // A rendszer-szakasz legalabb 3 px, kulonben a nagyon gyors lepeseknel
-        // eltunne — pedig eppen az a lenyeg, hogy lathatoan kicsi.
+        // A rendszer-szakasz legalabb 2%, kulonben a nagyon hosszu (kezzel
+        // toltott) lepeseknel eltunne — pedig eppen az a lenyeg, hogy latszik,
+        // milyen kicsi.
         const sysPct = Math.max(2, (sysMs / m.latency_ms) * 100);
         // Idorendben: eloszor a kez (homok), utana a rendszer (cherry).
-        bar = `<span class="lat-bar">`
+        bar = `<span class="lat-bar" style="width:${pct}%">`
             + `<span class="lat-hand" style="width:${100 - sysPct}%" title="kéz a táblán: ${dur(handMs)}"></span>`
             + `<span class="lat-sys" style="width:${sysPct}%" title="rendszer: ${dur(sysMs)}"></span>`
             + `</span>`;
@@ -498,7 +501,7 @@ TEMPLATE = r"""<!DOCTYPE html>
              + `<span class="n-sys">${dur(sysMs)}</span>`
              + `<span class="n-total"> = ${dur(m.latency_ms)}</span>`;
       } else {
-        bar = `<span class="lat-bar"><span class="lat-hand" style="width:100%"></span></span>`;
+        bar = `<span class="lat-bar" style="width:${pct}%"><span class="lat-hand" style="width:100%"></span></span>`;
         nums = `<span class="n-total">${dur(m.latency_ms)}</span>`;
       }
 
@@ -506,11 +509,11 @@ TEMPLATE = r"""<!DOCTYPE html>
         <td>${m.move_num}</td>
         <td class="move-uci">${m.uci}</td>
         <td>${m.frames_to_detect}</td>
-        <td>${chip}</td>
+        <td>${modeCell}</td>
         <td>
           <div class="lat-row">
-            <span class="lat-track">${bar}</span>
             <span class="lat-nums">${nums}</span>
+            <span class="lat-barwrap">${bar}</span>
           </div>
         </td>
       </tr>`;
@@ -523,7 +526,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     const summary = run.summary, moves = run.moves, samples = run.samples;
     const byName = Object.fromEntries(summary.map(r => [r.component, r]));
 
-    document.getElementById('pageTitle').textContent = 'Pipeline Telemetry — ' + runName;
+    document.getElementById('pageTitle').textContent = 'Időzítési napló — ' + runName;
     document.getElementById('footerNote').textContent =
       'components_summary.csv · components_samples.csv · moves.csv — timing_output/' + runName;
 
@@ -533,14 +536,14 @@ TEMPLATE = r"""<!DOCTYPE html>
     const fuzzyMoves = moves.filter(m => m.mode.startsWith('fuzzy')).length;
     const staticVals = moves.map(m => m.latency_from_static_ms).filter(v => v != null);
     const stats = [
-      ['Init idő', initRow ? fmt(initRow.mean_ms, 0) : '–', 'ms'],
-      ['Feldolgozott frame', frameRow ? frameRow.count.toLocaleString('en-US') : '0', ''],
+      ['Inicializálás', initRow ? fmt(initRow.mean_ms, 0) : '–', 'ms'],
+      ['Feldolgozott képkocka', frameRow ? frameRow.count.toLocaleString('en-US') : '0', ''],
       ['frame_total átlag', frameRow ? fmt(frameRow.mean_ms, 1) : '–', 'ms'],
       ['frame_total p95', frameRow ? fmt(frameRow.p95_ms, 1) : '–', 'ms'],
       ['Felismert lépés', moves.length.toLocaleString('en-US'), ''],
-      ['Fuzzy lépés', moves.length ? (fuzzyMoves + ' / ' + moves.length) : '–', ''],
+      ['Közelítő egyezés', moves.length ? (fuzzyMoves + ' / ' + moves.length) : '–', ''],
       ['Össz. lépésidő', moves.length ? fmt(totalMoveTime / 1000, 1) : '–', moves.length ? 's' : ''],
-      ...(staticVals.length ? [['Pipeline late (mozgás után)', fmt(staticVals.reduce((a,b)=>a+b,0) / staticVals.length, 0), 'ms']] : []),
+      ...(staticVals.length ? [['Rendszer ideje (átlag)', fmt(staticVals.reduce((a,b)=>a+b,0) / staticVals.length, 0), 'ms']] : []),
     ];
     document.getElementById('statStrip').innerHTML = stats.map(([label, value, unit]) =>
       `<div class="stat"><div class="label">${label}</div><div class="value">${value}${unit ? ` <small>${unit}</small>` : ''}</div></div>`
