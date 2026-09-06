@@ -54,8 +54,12 @@ def _check_calibration_gate() -> None:
 @dataclass
 class LiveConfig:
     camera_index: int = 4
-    camera_width: int = 1280
-    camera_height: int = 720
+    # 1080p: egy mező ~109 kamera-pixel a 720p-s ~72,5 helyett (2,25x több
+    # információ). A per-frame költség nem nő, mert a warp így is a fix
+    # 1632x1632-re megy (mérve: 1,9 ms mindkét felbontáson); csak az egyszeri
+    # board_detect lassul 1242 -> 1801 ms.
+    camera_width: int = 1920
+    camera_height: int = 1080
     camera_fps: int = 30
 
     # 30 fps capture / 3 = 10 fps processing (~100 ms budget). Measured
@@ -138,10 +142,14 @@ class LatestFrameCamera:
         if not self.cap.isOpened():
             raise RuntimeError("Nem sikerült megnyitni a kamerát.")
 
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # MJPG KELL a felbontás előtt: 1920x1080-on a kamera csak MJPG-vel ad
+        # 30 fps-t (YUYV-ban nincs is 30 fps-es mód), és OpenCV alapból YUYV-ot
+        # választhat -> néhány fps-re esne a képfrissítés.
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         self._lock = threading.Lock()
         self._latest_frame = None

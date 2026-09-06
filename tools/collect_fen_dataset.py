@@ -58,6 +58,7 @@ import hashlib
 import json
 import sys
 import time
+import unicodedata
 from collections import deque
 from pathlib import Path
 
@@ -123,14 +124,69 @@ def parse_args() -> argparse.Namespace:
 # Kamera
 # ---------------------------------------------------------------------------
 
+# Ablaknevek: CSAK ASCII. Az OpenCV highgui a nevet azonosítóként ÉS
+# ablakcímként is használja; ékezetes névnél a Qt backend a hiányzó
+# font-könyvtár miatt elrontja a címet (a címsorban "?" jelenik meg).
+WIN_CAMERA = "FEN gyujto - kamera"
+WIN_OVERLAY = "FEN cimkek a warpolt tablan (zold=feher, piros=fekete, sarga=elteres)"
+
+
+def _grab_ok(cap: cv2.VideoCapture, tries: int = 10) -> bool:
+    """True, ha a kamera tényleg ad képkockát (nem csak megnyílt)."""
+    for _ in range(tries):
+        ok, frame = cap.read()
+        if ok and frame is not None and frame.size > 0:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def open_camera(args: argparse.Namespace) -> cv2.VideoCapture:
-    cap = cv2.VideoCapture(args.camera_index)
-    if not cap.isOpened():
-        raise SystemExit(f"Nem sikerült megnyitni a kamerát (index={args.camera_index}).")
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-    cap.set(cv2.CAP_PROP_FPS, args.fps)
+    """Megnyitja a kamerát és ELLENŐRZI, hogy valóban érkezik-e képkocka.
+
+    A CAP_PROP_BUFFERSIZE a V4L2 backendben nem megbízható: egyes drivereknél
+    (pl. ez a Trust webkamera) a beállítása után a read() csak üres frame-eket
+    ad, amitől az előnézet feketén marad. Ezért a buffersize opcionális: ha
+    utána nem jön kép, újranyitjuk nélküle.
+    """
+    def _open(with_buffersize: bool) -> cv2.VideoCapture:
+        cap = cv2.VideoCapture(args.camera_index)
+        if not cap.isOpened():
+            raise SystemExit(f"Nem sikerült megnyitni a kamerát (index={args.camera_index}).")
+        # MJPG a felbontás ELŐTT: 1920x1080-on a kamera csak MJPG-vel ad 30 fps-t.
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        # Felbontás/FPS ELŐBB, buffersize csak utána — fordított sorrendben egyes
+        # V4L2 drivereknél a formátum-újratárgyalás elbukik.
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+        cap.set(cv2.CAP_PROP_FPS, args.fps)
+        if with_buffersize:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
+    cap = _open(with_buffersize=True)
+    if not _grab_ok(cap):
+        print("  (a kamera nem adott képet BUFFERSIZE=1 mellett — újranyitás nélküle)")
+        cap.release()
+        cap = _open(with_buffersize=False)
+        if not _grab_ok(cap, tries=20):
+            cap.release()
+            raise SystemExit(
+                f"A kamera (index={args.camera_index}) megnyílt, de nem ad képkockát.\n"
+                f"  - Zárj be minden mást, ami használhatja (böngésző, run_live.py).\n"
+                f"  - Ellenőrizd a helyes indexet:  v4l2-ctl --list-devices\n"
+                f"  - Próbáld: python -m tools.collect_fen_dataset --camera-index <N> ..."
+            )
+
+    # A kert felbontas nem garantalt: ha a driver mast ad (pl. mert nem MJPG-t
+    # valasztott), a mezok kevesebb pixelt kapnak -> szoljunk rola.
+    got_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    got_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if (got_w, got_h) != (args.width, args.height):
+        print(f"  !!! a kamera {got_w}x{got_h}-t adott a kert {args.width}x{args.height} helyett — "
+              f"a mezok kevesebb pixelt kapnak (ellenorizd: v4l2-ctl -d /dev/video{args.camera_index} --list-formats-ext)")
+    else:
+        print(f"  kamera felbontas: {got_w}x{got_h}")
 
     if args.exposure is not None:
         # V4L2: 1 = manual mode, 3 = aperture priority (auto)
@@ -204,22 +260,14 @@ class ModelChecker:
     """
 
     def __init__(self, weights_path: str):
-        import torch
         from vision.models.occupancy_color_model import OccupancyColorModel
-        from vision.pipeline.batch_classifier import preprocess_roi_for_batch
 
-        self._torch = torch
-        self._prep = preprocess_roi_for_batch
+        # backend="auto": ONNX ha van .onnx a checkpoint mellett, különben torch
         self.model = OccupancyColorModel(weights_path=weights_path, device="cpu")
 
     def predict_occupancy(self, rois: list[list[np.ndarray]]) -> np.ndarray:
-        torch = self._torch
-        xs = [self._prep(rois[r][c], self.model) for r in range(8) for c in range(8)]
-        with torch.no_grad():
-            out = self.model.model(torch.stack(xs))
-            logits = out[0] if isinstance(out, (tuple, list)) else out   # multi-task utód: (color, type)
-            idx = logits.argmax(1).cpu().numpy()
-        return self.model.idx_to_label[idx].reshape(8, 8).astype(np.int32)
+        flat = [rois[r][c] for r in range(8) for c in range(8)]
+        return self.model.predict_rois(flat).labels.reshape(8, 8).astype(np.int32)
 
     @staticmethod
     def symmetries(grid: np.ndarray) -> list[tuple[str, np.ndarray]]:
@@ -333,6 +381,63 @@ def validate_fen(fen: str) -> str | None:
         return None
 
 
+_START_BOARD_FEN = chess.Board().board_fen()
+_ROTATED_START_BOARD_FEN = (
+    chess.Board().transform(chess.flip_vertical).transform(chess.flip_horizontal).board_fen()
+)
+
+
+def print_position_help(fen: str, prev_fen: str | None = None) -> None:
+    """ASCII tábla + mit kell átraknod az előző álláshoz képest.
+
+    A generált listában (tools/make_fen_positions.py) két szomszédos FEN
+    között egy lépés a különbség, így a teendő általában egyetlen bábu
+    mozgatása — ezt írjuk ki külön, hogy ne kelljen FEN-t olvasgatni.
+    """
+    board = chess.Board(fen)
+    print("     a b c d e f g h")
+    for rank in range(7, -1, -1):
+        row = [
+            (board.piece_at(chess.square(f, rank)).symbol()
+             if board.piece_at(chess.square(f, rank)) else ".")
+            for f in range(8)
+        ]
+        print(f"  {rank + 1}  " + " ".join(row))
+    print("     (nagybetu = feher, kisbetu = fekete)")
+
+    if not prev_fen:
+        return
+
+    prev = chess.Board(prev_fen)
+    vacated = [(sq, prev.piece_at(sq)) for sq in chess.SQUARES
+               if prev.piece_at(sq) is not None and board.piece_at(sq) != prev.piece_at(sq)]
+    filled = [(sq, board.piece_at(sq)) for sq in chess.SQUARES
+              if board.piece_at(sq) is not None and board.piece_at(sq) != prev.piece_at(sq)]
+
+    n_changed = len(vacated) + len(filled)
+
+    if n_changed > 6:
+        # Jatszmahataron az elozo allashoz kepest szinte minden valtozik —
+        # ilyenkor egy 30+ elemu lista olvashatatlan, es felesleges is:
+        # a fenti abra szerint kell felrakni a tablat.
+        bf = board.board_fen()
+        if bf == _START_BOARD_FEN:
+            print("  >>> UJ JATSZMA: allitsd fel a szokasos ALAPALLAST (tabla normal allasban).")
+        elif bf == _ROTATED_START_BOARD_FEN:
+            print("  >>> UJ JATSZMA: FORDITSD MEG A TABLAT 180 FOKKAL, majd allitsd fel az alapallast.")
+        else:
+            print(f"  >>> TELJES UJRARAKAS ({n_changed} mezo valtozik) — a fenti abra szerint rakd fel.")
+        return
+
+    if len(vacated) == 1 and len(filled) == 1 and vacated[0][1].symbol() == filled[0][1].symbol():
+        print(f"  TEENDO: {filled[0][1].symbol()}  {chess.square_name(vacated[0][0])}"
+              f" -> {chess.square_name(filled[0][0])}")
+    elif vacated or filled:
+        le = ", ".join(f"{p.symbol()}{chess.square_name(sq)}" for sq, p in vacated) or "-"
+        fe = ", ".join(f"{p.symbol()}{chess.square_name(sq)}" for sq, p in filled) or "-"
+        print(f"  TEENDO: vedd le: {le}   |   tedd fel: {fe}")
+
+
 def load_fen_file(path: Path) -> list[str]:
     fens = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -377,7 +482,15 @@ def draw_label_overlay(img_warp: np.ndarray, det: DetectionResult, labels, check
     return cv2.resize(vis, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
 
 
+def _ascii(text: str) -> str:
+    """Ékezetek leszedése — a cv2.putText Hershey-fontja csak ASCII-t rajzol,
+    minden más '?'-ként jelenik meg az overlayen."""
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return folded.replace("—", "-").replace("–", "-")
+
+
 def put_text(img, text, y, color=(0, 255, 0)):
+    text = _ascii(text)
     cv2.putText(img, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
     cv2.putText(img, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
 
@@ -431,6 +544,7 @@ def main() -> None:
 
     print(f"Session: {args.session} | kimenet: {args.out_dir.resolve()}")
     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}")
+    print_position_help(fen)
     print("SPACE=fotó  n=következő FEN  f=FEN bekérés  d=tábla újradetektálás  o=overlay  e=exponálás  q=kilépés")
 
     det: DetectionResult | None = None
@@ -456,12 +570,24 @@ def main() -> None:
         print(f"  ✓ tábla detektálva ({dt:.0f} ms)")
         return True
 
+    # Explicit ablak: Wayland/XWayland alatt az implicit (imshow által
+    # létrehozott) AUTOSIZE ablak néha pár pixelesre zsugorodik.
+    cv2.namedWindow(WIN_CAMERA, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WIN_CAMERA, args.width, args.height)
+
+    read_fail_streak = 0
+
     try:
         while True:
             ok, frame = cap.read()
-            if not ok:
+            if not ok or frame is None or frame.size == 0:
+                read_fail_streak += 1
+                if read_fail_streak in (30, 150) or read_fail_streak % 500 == 0:
+                    print(f"  !!! a kamera {read_fail_streak} egymást követő üres frame-et adott "
+                          f"(index={args.camera_index}) — használja más program?")
                 time.sleep(0.01)
                 continue
+            read_fail_streak = 0
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             brightness.append(board_mean_brightness(gray, det))
@@ -483,11 +609,11 @@ def main() -> None:
                     for c in range(8):
                         x, y = det.centers_img[r][c]
                         cv2.circle(preview, (int(x), int(y)), 3, (0, 255, 255), -1)
-            cv2.imshow("FEN-gyűjtő — kamera", preview)
+            cv2.imshow(WIN_CAMERA, preview)
 
             if show_overlay and det is not None:
                 img_warp = cv2.warpPerspective(frame, det.M, cfg.warp_size, flags=cv2.WARP_INVERSE_MAP)
-                cv2.imshow("FEN címkék a warpolt táblán (zöld=fehér, piros=fekete, sárga=eltérés a modelltől)",
+                cv2.imshow(WIN_OVERLAY,
                            draw_label_overlay(img_warp, det, labels, last_check))
 
             key = cv2.waitKey(1) & 0xFF
@@ -498,7 +624,7 @@ def main() -> None:
             elif key == ord("o"):
                 show_overlay = not show_overlay
                 if not show_overlay:
-                    cv2.destroyWindow("FEN címkék a warpolt táblán (zöld=fehér, piros=fekete, sárga=eltérés a modelltől)")
+                    cv2.destroyWindow(WIN_OVERLAY)
             elif key == ord("e"):
                 print_exposure_banner(cap, args)
             elif key in (ord("n"), ord("f")):
@@ -509,11 +635,13 @@ def main() -> None:
                 else:
                     new_fen = prompt_fen(fen)
                 if new_fen:
+                    prev_fen = fen
                     fen = new_fen
                     labels = fen_to_raw_labels(fen)
                     fen_occ = fen_to_raw_occupancy(fen)
                     last_check = None
                     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}  -> split: {choose_split(args.split_mode, args.val_every, fen, shot_index)}")
+                    print_position_help(fen, prev_fen)
                     print("  Állítsd fel a táblát, ellenőrizd az overlay-t, majd SPACE.")
             elif key == ord(" "):
                 if det is None and not redetect(frame):

@@ -140,6 +140,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -341,6 +342,33 @@ class SquareDataset(Dataset):
         return img, int(color), int(ptype)
 
 
+# --- átméretezés: PONTOSAN az éles út szerint ------------------------------
+
+class CvResize:
+    """126x126 ROI -> img_size, ugyanazzal a módszerrel, mint élesben.
+
+    Az éles út (vision/models/occupancy_color_model.preprocess_rois) cv2-t
+    használ: INTER_AREA kicsinyítéskor, INTER_CUBIC nagyításkor. A torchvision
+    `transforms.Resize` bilineáris útja ettől mérhetően eltér — 200 valódi
+    fekete-bábu ROI-n átlag 0,5/255 szint, a pixelek 1,4%-ánál >5 szint.
+    Kicsi, de ingyen megszüntethető train/inference eltérés.
+
+    A resize csatornánként független, ezért mindegy, hogy RGB (PIL) vagy BGR
+    (éles út) sorrendben fut — az eredmény azonos.
+    """
+
+    def __init__(self, size: int):
+        self.size = int(size)
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        a = np.asarray(img)
+        h, w = a.shape[:2]
+        if (h, w) == (self.size, self.size):
+            return img
+        interp = cv2.INTER_CUBIC if (w < self.size or h < self.size) else cv2.INTER_AREA
+        return Image.fromarray(cv2.resize(a, (self.size, self.size), interpolation=interp))
+
+
 # --- egyedi augmentációk (PIL -> PIL) --------------------------------------
 
 class RandomGamma:
@@ -413,7 +441,7 @@ def build_train_transform(img_size: int, strong: bool = True):
     vízszintes tükrözés és kis affin torzítás igen.
     """
     aug: list[Any] = [
-        transforms.Resize((img_size, img_size)),
+        CvResize(img_size),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomAffine(degrees=6, translate=(0.04, 0.04), scale=(0.94, 1.06), shear=3),
     ]
@@ -438,7 +466,7 @@ def build_train_transform(img_size: int, strong: bool = True):
 
 def build_eval_transform(img_size: int):
     return transforms.Compose([
-        transforms.Resize((img_size, img_size)),
+        CvResize(img_size),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])

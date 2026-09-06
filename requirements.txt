@@ -12,3 +12,5 @@ numpy>=1.26,<3.0
 opencv-python>=4.10,<5.0
 torch>=2.5,<3.0
 torchvision>=0.20,<1.0
+onnxruntime>=1.18,<2.0
+onnx>=1.16,<2.0   # export + INT8 kvantálás (tools/export_onnx.py)

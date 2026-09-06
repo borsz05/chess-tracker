@@ -14,6 +14,17 @@ class AppConfig:
     start_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     weights_path: str | None = str(DEFAULT_WEIGHTS_PATH)
 
+    # Inferencia backend: "onnx" (alapértelmezett, ~8x gyorsabb CPU-n), "torch"
+    # (fallback), "auto" (onnx ha van .onnx a .pt mellett, különben torch).
+    # Az ONNX fájl: python -m tools.export_onnx --weights <weights_path>
+    # (alapból <weights_path>.onnx-ra ír; onnx_path=None ezt keresi).
+    inference_backend: str = "auto"
+    onnx_path: str | None = None
+    inference_threads: int | None = None
+    # Ha az export (--int8) egy INT8 változatot ajánlott (black recall nem
+    # romlott), auto módban azt töltjük; False -> mindig a fp32 .onnx.
+    allow_int8: bool = True
+
     inner_pad_ratio: float = 0.06
     context: float = 0.50
     cell: int = 96

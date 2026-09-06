@@ -67,7 +67,8 @@ pip install -r requirements.txt
 | `fastapi`, `uvicorn[standard]`, `pydantic` | Backend server |
 | `python-chess` | Move generation and validation |
 | `numpy`, `opencv-python` | Image processing, warp, diffs |
-| `torch`, `torchvision` | ResNet18 square classifier |
+| `torch`, `torchvision` | Square classifier training / PyTorch fallback backend |
+| `onnxruntime`, `onnx` | Default CPU inference backend, ONNX export and INT8 quantisation |
 | `requests` | Robot HTTP client (`robot/impl/`) |
 
 ### System packages
@@ -83,6 +84,14 @@ The ResNet18 checkpoint is not included in this repository. Obtain it and place 
 ```
 vision/models/weights/resnet18_best_topdown.pt
 ```
+
+Then export it once to ONNX (the pipeline runs inference with ONNX Runtime on CPU by default and falls back to PyTorch only if no `.onnx` file is found next to the `.pt`):
+
+```bash
+python -m tools.export_onnx --weights vision/models/weights/resnet18_best_topdown.pt --int8 --eval-dir <labelled val dir> --calib-dir <train dir>
+```
+
+This writes `resnet18_best_topdown.onnx` plus a `.onnx.json` sidecar (class order, image size, normalisation), checks that `.pt` and `.onnx` predictions match, and, with `--int8`, evaluates static/dynamic INT8 quantisation. If the INT8 model does not lose `black` recall, the sidecar records it as `recommended_int8` and `AppConfig.inference_backend="auto"` loads that file (`allow_int8=False` forces fp32). The same exporter works for the multi-task `MultiTaskSquareNet` checkpoints produced by `tools/train_square_classifier.py`.
 
 ### Training data and model training (`tools/`)
 
@@ -332,6 +341,10 @@ The container uses `network_mode: "host"` — all ports are shared with the host
 | Field | Default | Description |
 |---|---|---|
 | `weights_path` | `vision/models/weights/resnet18_best_topdown.pt` | ResNet18 checkpoint |
+| `inference_backend` | `"auto"` | `"auto"` = ONNX Runtime if `<weights>.onnx` exists, else PyTorch; `"onnx"` / `"torch"` force one |
+| `onnx_path` | `None` | Explicit `.onnx` file (default: next to `weights_path`) |
+| `allow_int8` | `True` | Load the INT8 model recorded as `recommended_int8` by `tools/export_onnx.py --int8` |
+| `inference_threads` | `None` | ORT intra-op / torch CPU threads (None = runtime default) |
 | `cell` | 96 | Pixel size of each square in warped image |
 | `context` | 0.50 | Padding ratio around each square crop fed to the model |
 | `init_buffer_frames` | 3 | Frames averaged for initial position baseline |

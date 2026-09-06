@@ -132,7 +132,14 @@ class ChessVisionTracker:
         if self.profiler:
             self.profiler.start("model_load")
         from vision.models.occupancy_color_model import OccupancyColorModel
-        model = OccupancyColorModel(weights_path=self.cfg.weights_path)
+        model = OccupancyColorModel(
+            weights_path=self.cfg.weights_path,
+            backend=getattr(self.cfg, "inference_backend", "auto"),
+            onnx_path=getattr(self.cfg, "onnx_path", None),
+            num_threads=getattr(self.cfg, "inference_threads", None),
+            allow_int8=getattr(self.cfg, "allow_int8", True),
+        )
+        print(f"[tracker] {model!r}")
         if self.profiler:
             self.profiler.stop("model_load")
         return model

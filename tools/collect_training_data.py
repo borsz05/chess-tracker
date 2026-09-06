@@ -26,16 +26,15 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Projekt importok – a script a gyökérmappából fusson
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from vision.app.config import AppConfig
 from vision.board.find_chessboard import findChessboard, generateNewBestFit, getBestLines
 from vision.board.squares import extract_squares_from_warp
-from vision.pipeline.batch_classifier import crop_with_context, preprocess_roi_for_batch
+from vision.pipeline.batch_classifier import crop_with_context
 from vision.models.occupancy_color_model import OccupancyColorModel
 
-import torch
 
 # ---------------------------------------------------------------------------
 # Konfig
@@ -52,7 +51,7 @@ DATA_DIR = ROOT / "data"
 for name in ("empty", "white", "black", "unsure"):
     (DATA_DIR / name).mkdir(parents=True, exist_ok=True)
 
-WEIGHTS_PATH = ROOT / "vision" / "models" / "weights" / "resnet18_best_szines_topdown_kepeken.pt"
+WEIGHTS_PATH = AppConfig().weights_path
 
 # ---------------------------------------------------------------------------
 # Segédfüggvények
@@ -91,7 +90,6 @@ def detect_and_warp(gray: np.ndarray, frame_bgr: np.ndarray):
     return img_warp_color, bbox_warp
 
 
-@torch.no_grad()
 def classify_and_save(
     img_warp_color: np.ndarray,
     bbox_warp,
@@ -102,34 +100,21 @@ def classify_and_save(
     Kivágja a 64 mezőt, osztályozza őket, elmenti a megfelelő mappába.
     Visszaadja a mentett fájlok számát.
     """
-    saved = 0
-
-    batch_tensors = []
-    rois = []
-    positions = []
-
+    rois, positions = [], []
     for r in range(8):
         for c in range(8):
             roi = crop_with_context(img_warp_color, bbox_warp[r][c], context=CONTEXT)
-            x = preprocess_roi_for_batch(roi, model)
-            if x is None:
+            if roi is None or roi.size == 0:
                 continue
-            batch_tensors.append(x)
             rois.append(roi)
             positions.append((r, c))
-
-    if not batch_tensors:
+    if not rois:
         return 0
 
-    batch = torch.stack(batch_tensors, dim=0).to(model.device, non_blocking=True)
-    logits = model.model(batch)
-    probs = torch.softmax(logits, dim=1)
+    pred = model.predict_rois(rois)
 
-    pred_idx  = torch.argmax(probs, dim=1).cpu().numpy()
-    pred_conf = probs.max(dim=1).values.cpu().numpy()
-    label_ids = model.idx_to_label[pred_idx]
-
-    for (r, c), roi, label, conf in zip(positions, rois, label_ids, pred_conf):
+    saved = 0
+    for (r, c), roi, label, conf in zip(positions, rois, pred.labels, pred.confs):
         label_name = LABEL_TO_NAME.get(int(label), "unsure")
 
         if conf < CONF_THRESHOLD:
@@ -140,8 +125,7 @@ def classify_and_save(
             suffix = ""
 
         fname = f"{timestamp}_r{r}c{c}{suffix}.jpg"
-        out_path = folder / fname
-        cv2.imwrite(str(out_path), roi)
+        cv2.imwrite(str(folder / fname), roi)
         saved += 1
 
     return saved
@@ -154,7 +138,7 @@ def classify_and_save(
 def main():
     print("Modell betöltése...")
     model = OccupancyColorModel(weights_path=str(WEIGHTS_PATH))
-    print(f"Modell betöltve. Device: {model.device}")
+    print(f"Modell betöltve: {model!r}")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():

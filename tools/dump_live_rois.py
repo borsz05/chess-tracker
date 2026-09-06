@@ -31,7 +31,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
 
 # ---------------------------------------------------------------------------
 # Projekt importok — a repo gyökere kerül a sys.path-ra, függetlenül attól,
@@ -44,7 +43,7 @@ sys.path.insert(0, str(ROOT))
 from vision.app.config import AppConfig
 from vision.app.run_live import LiveConfig
 from vision.pipeline.board_detector import detect_board_on_frame
-from vision.pipeline.batch_classifier import crop_with_context, preprocess_roi_for_batch
+from vision.pipeline.batch_classifier import crop_with_context
 from vision.models.occupancy_color_model import OccupancyColorModel
 
 LABEL_TO_NAME = {0: "empty", 1: "white", 2: "black"}
@@ -91,7 +90,6 @@ def detect_and_warp_color(frame_bgr: np.ndarray, cfg: AppConfig):
     return img_warp_color, det.bbox_warp
 
 
-@torch.no_grad()
 def classify_and_save(
     img_warp_color: np.ndarray,
     bbox_warp,
@@ -102,31 +100,21 @@ def classify_and_save(
     timestamp: str,
 ) -> int:
     """64 mező kivágása (crop_with_context, ugyanaz mint élesben), osztályozás, mentés."""
-    batch_tensors, rois, positions = [], [], []
-
+    rois, positions = [], []
     for r in range(8):
         for c in range(8):
             roi = crop_with_context(img_warp_color, bbox_warp[r][c], context=cfg.context)
-            x = preprocess_roi_for_batch(roi, model)
-            if x is None:
+            if roi is None or roi.size == 0:
                 continue
-            batch_tensors.append(x)
             rois.append(roi)
             positions.append((r, c))
-
-    if not batch_tensors:
+    if not rois:
         return 0
 
-    batch = torch.stack(batch_tensors, dim=0).to(model.device, non_blocking=True)
-    logits = model.model(batch)
-    probs = torch.softmax(logits, dim=1)
-
-    pred_idx = torch.argmax(probs, dim=1).cpu().numpy()
-    pred_conf = probs.max(dim=1).values.cpu().numpy()
-    label_ids = model.idx_to_label[pred_idx]
+    pred = model.predict_rois(rois)
 
     saved = 0
-    for (r, c), roi, label, conf in zip(positions, rois, label_ids, pred_conf):
+    for (r, c), roi, label, conf in zip(positions, rois, pred.labels, pred.confs):
         label_name = LABEL_TO_NAME.get(int(label), "unsure")
 
         if conf < conf_threshold:
@@ -151,7 +139,7 @@ def main() -> None:
     weights_path = args.weights or cfg.weights_path
     print(f"Modell betöltése: {weights_path}")
     model = OccupancyColorModel(weights_path=weights_path)
-    print(f"Modell betöltve. Device: {model.device} | img_size: {model.img_size}")
+    print(f"Modell betöltve: {model!r}")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
 

@@ -4,9 +4,8 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
-import torch
 
-from vision.models.occupancy_color_model import OccupancyColorModel
+from vision.models.occupancy_color_model import OccupancyColorModel, Prediction
 
 
 LabelArray = np.ndarray   # shape: (8, 8), dtype: int32
@@ -18,6 +17,9 @@ BBoxGrid = list[list[tuple[int, int, int, int]]]
 class BatchClassificationResult:
     labels: LabelArray
     confs: ConfArray
+    # Bábutípus-valószínűségek (8, 8, n_type) vagy None legacy modellnél.
+    # EGYELŐRE csak promóciónál használható — a fő lépésdetektálás a labels/confs-on megy.
+    type_probs: np.ndarray | None = None
 
 
 def crop_with_context(
@@ -50,34 +52,17 @@ def crop_with_context(
     return img[ny0:ny1, nx0:nx1].copy()
 
 
-def preprocess_roi_for_batch(
-    roi: np.ndarray,
-    model: OccupancyColorModel,
-) -> torch.Tensor | None:
-    """
-    Egy ROI-ból modell input tensor készítése.
-    A normalizáció ugyanazt használja, mint amit a checkpoint tárol.
-    """
-    if roi is None or roi.size == 0:
-        return None
-
-    if roi.ndim == 2:
-        roi = cv2.cvtColor(roi, cv2.COLOR_GRAY2BGR)
-
-    size = model.img_size
-    h, w = roi.shape[:2]
-    interp = cv2.INTER_CUBIC if (w < size or h < size) else cv2.INTER_AREA
-    roi = cv2.resize(roi, (size, size), interpolation=interp)
-
-    roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-
-    x = torch.from_numpy(np.ascontiguousarray(roi))
-    x = x.permute(2, 0, 1).float().div_(255.0)
-    x.sub_(model.norm_mean_cpu).div_(model.norm_std_cpu)
-    return x
+def _crop_many(img_warp: np.ndarray, bbox_grid: BBoxGrid, squares, context: float):
+    rois, positions = [], []
+    for r, c in squares:
+        roi = crop_with_context(img_warp, bbox_grid[r][c], context=context)
+        if roi is None or roi.size == 0:
+            continue
+        rois.append(roi)
+        positions.append((r, c))
+    return rois, positions
 
 
-@torch.no_grad()
 def classify_warp_squares_batch(
     img_warp: np.ndarray,
     bbox_warp: BBoxGrid,
@@ -86,42 +71,28 @@ def classify_warp_squares_batch(
     context: float = 0.50,
 ) -> BatchClassificationResult:
     """
-    A warpolt képből egyszerre batch-ben klasszifikálja a 64 mezőt.
+    A warpolt képből egyszerre batch-ben klasszifikálja a 64 mezőt
+    (vektorizált preprocess + egy forward, ONNX vagy torch backend).
     """
     labels = np.zeros((8, 8), dtype=np.int32)
     confs = np.zeros((8, 8), dtype=np.float32)
 
-    batch_tensors: list[torch.Tensor] = []
-    positions: list[tuple[int, int]] = []
-
-    for r in range(8):
-        row_bboxes = bbox_warp[r]
-        for c in range(8):
-            roi = crop_with_context(img_warp, row_bboxes[c], context=context)
-            x = preprocess_roi_for_batch(roi, model)
-            if x is None:
-                continue
-            batch_tensors.append(x)
-            positions.append((r, c))
-
-    if not batch_tensors:
+    rois, positions = _crop_many(img_warp, bbox_warp, [(r, c) for r in range(8) for c in range(8)], context)
+    if not rois:
         return BatchClassificationResult(labels=labels, confs=confs)
 
-    batch = torch.stack(batch_tensors, dim=0).to(model.device, non_blocking=True)
+    pred: Prediction = model.predict_rois(rois)
+    type_grid = None
+    if pred.type_probs is not None:
+        type_grid = np.zeros((8, 8, pred.type_probs.shape[1]), dtype=np.float32)
 
-    logits = model.model(batch)
-    probs = torch.softmax(logits, dim=1)
+    for i, (r, c) in enumerate(positions):
+        labels[r, c] = int(pred.labels[i])
+        confs[r, c] = float(pred.confs[i])
+        if type_grid is not None:
+            type_grid[r, c] = pred.type_probs[i]
 
-    pred_idx = torch.argmax(probs, dim=1).detach().cpu().numpy()
-    pred_conf = probs.max(dim=1).values.detach().cpu().numpy().astype(np.float32)
-
-    label_ids = model.idx_to_label[pred_idx]
-
-    for (r, c), lab, conf in zip(positions, label_ids, pred_conf):
-        labels[r, c] = int(lab)
-        confs[r, c] = float(conf)
-
-    return BatchClassificationResult(labels=labels, confs=confs)
+    return BatchClassificationResult(labels=labels, confs=confs, type_probs=type_grid)
 
 
 def classify_frame_batch(
@@ -152,7 +123,7 @@ def classify_frame_batch(
         context=context,
     )
 
-@torch.no_grad()
+
 def classify_selected_squares(
     img_warp: np.ndarray,
     bbox_grid: BBoxGrid,
@@ -165,29 +136,11 @@ def classify_selected_squares(
     Csak bizonyos mezőket klasszifikál.
     squares: [(r,c),...]
     """
-    batch_tensors = []
-    mapping = []
-
-    for r, c in squares:
-        roi = crop_with_context(img_warp, bbox_grid[r][c], context=context)
-        x = preprocess_roi_for_batch(roi, model)
-        if x is None:
-            continue
-        batch_tensors.append(x)
-        mapping.append((r, c))
-
-    if not batch_tensors:
+    rois, positions = _crop_many(img_warp, bbox_grid, squares, context)
+    if not rois:
         return {}
-
-    batch = torch.stack(batch_tensors, dim=0).to(model.device, non_blocking=True)
-    logits = model.model(batch)
-    probs = torch.softmax(logits, dim=1)
-
-    pred_idx = torch.argmax(probs, dim=1).detach().cpu().numpy()
-    pred_conf = probs.max(dim=1).values.detach().cpu().numpy()
-    label_ids = model.idx_to_label[pred_idx]
-
+    pred = model.predict_rois(rois)
     return {
-        (r, c): (int(lab), float(conf))
-        for (r, c), lab, conf in zip(mapping, label_ids, pred_conf)
+        (r, c): (int(pred.labels[i]), float(pred.confs[i]))
+        for i, (r, c) in enumerate(positions)
     }
