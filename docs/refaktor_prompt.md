@@ -1,5 +1,70 @@
 # Feladat: sakk-mezőosztályozó újratervezése + vision pipeline átszervezése
 
+---
+
+## ÁLLAPOT — 2026-09-06 (olvasd el ELŐSZÖR, felülírja az alábbi szakaszok elavult számait)
+
+**A 7., 8. és 9. FELADAT KÉSZ.** Már csak a **10. szakasz** (pipeline átszervezés) van hátra.
+
+### Ami elkészült
+
+- **Modell:** MobileNetV3-Small, multi-task (3 osztályos szín-fej + 7 osztályos típus-fej),
+  `vision/models/square_net.py`. Betanítva 128 px-en, ImageNet-előtanított backbone-nal.
+- **ONNX Runtime inferencia:** `tools/export_onnx.py`, és az `OccupancyColorModel`
+  onnx/torch/auto backenddel. Az `img_size` és az architektúra a checkpointból jön,
+  a pipeline-nak nem kell tudnia róla.
+- **Adatgyűjtés:** `tools/collect_fen_dataset.py` (FEN-ből automatikus címkézés),
+  `tools/make_fen_positions.py` (Stockfish-alapú pozíciólista). 11 747 ROI, 6 session,
+  60% 1080p.
+- **Kamera:** 1280x720 -> **1920x1080** (MJPG kötelező, 1080p-n csak azzal van 30 fps).
+  Egy mező 72,5 -> 108,2 kamera-pixel.
+
+### Frissült mérések (a 2. szakasz régi torch-számai ÉRVÉNYTELENEK)
+
+| Komponens | régi (torch, ResNet18) | most (ONNX int8_static, ResNet18) |
+|---|---|---|
+| `classifier_full` (64 mező) | 300–350 ms | **64 ms** |
+| `classifier_partial` (20 mező) | 40–55 ms | **21 ms** |
+
+Az új MobileNetV3 modellel ez tovább javul (ORT batch 64 @128 px: ~21 ms, @100 px: ~16 ms).
+**A klasszifikátor tehát MÁR NEM a szűk keresztmetszet.**
+
+### Hol van valójában a latencia — ez a 10. szakasz kiindulópontja
+
+A ~900 ms-os ideális elfogadási latenciából (10 fps feldolgozás, `stable_frames=4`,
+`buffer_size=5`, `emit_cooldown=200 ms`):
+
+- **196 ms a tényleges számítás**
+- **704 ms puszta várakozás a frame-ekre**
+
+A latencia képlete: *(hány frame kell, mire elhiszem) × (mennyi idő alatt jön egy frame)*.
+Jelenleg 7 frame kell (3 a szavazat átfordulásához + 4 perzisztencia), egyenként 100 ms.
+A nyereség tehát a frame-számból és a frame-rátából jön, nem a modellből.
+
+Becslés: `every_nth` 3->1 (30 fps) ~430 ms; + `stable_frames` 4->2, `buffer` 5->3 ~330 ms;
++ `cooldown` 200->100 ms ~230 ms. A partial út teljes költsége ~28 ms, tehát 30 fps-nél
+(33 ms keret) még elfér — de **tartalék nélkül**, ezért nehezebb modellt NE válassz.
+
+### Új ismeret: az orientáció-feltevés törékeny
+
+A `board_detector` rácsának orientációja **nem garantált** — ugyanaz a fizikai tábla
+más rácsállást is adhat két detektálás között. A gyűjtőben ezt megoldottuk
+(`ModelChecker.apply_symmetry`, automatikus igazítás, `tests/test_auto_orient.py`).
+
+**Az éles pipeline-ban ezt NE írd át** — ott a `raw_to_standard` leképezés fix, és a
+python-chess irányítás erre épül. De **legyen tudatos**, hogy ugyanez a törékenység
+élesben is jelentkezhet (elmozdított tábla, újradetektálás beragadás után), és ha
+biztonságosan kezelhető, az érték.
+
+### Fenntartás a modell számaihoz
+
+A val halmazon mért 100%-os `black` recall **felső becslés**: a `--split-mode position`
+egy állás fotóit ugyanabba a splitbe teszi, de két szomszédos állás csak EGY lépésben
+tér el, tehát a val-ban lévő képek 62/64 mezője near-duplicate a train-beliekkel.
+A valódi mérce az éles futás — ne a val-számra hangolj.
+
+---
+
 Egy működő, éles kamerás sakk-követő rendszeren dolgozol, amely egy Franka Research 3
 robotkart vezérel. A rendszer működik, de **túl lassan fogadja el a lépéseket**, és a
 **fekete bábukat gyakran tévedésből "empty"-nek vagy "white"-nak** osztályozza.
