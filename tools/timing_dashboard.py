@@ -87,31 +87,38 @@ TEMPLATE = r"""<!DOCTYPE html>
 <html lang="hu" data-theme="light">
 <meta charset="utf-8">
 <title>Pipeline Telemetry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light;
-    --surface-0: #f4f6f6;
-    --surface-1: #ffffff;
-    --surface-2: #eaeeee;
-    --border: #d6dcdc;
-    --text-primary: #12181a;
-    --text-secondary: #4d5a5d;
-    --text-muted: #7c898b;
-    --accent: #2a78d6;
-    --series-init: #4a3aa7;
-    --series-hot: #2a78d6;
-    --series-classify: #eb6834;
-    --series-geom: #1baf7a;
-    --series-frame: #256abf;
-    --status-good: #0ca30c;
-    --status-warning: #c98500;
-    /* A lepesenkenti ido ket fazisa: passzivan varunk a kezre (szurke),
-       majd dolgozik a rendszer (kek). */
-    --phase-hand: #b9c5ca;
-    --phase-system: #2a78d6;
-    --grid-line: #dde3e3;
-    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Paletta: Oat / Butter / Cherry / Olive — meleg, nyomdai jellegu, a
+       kepernyorol is jol vetitheto. A korabbi hideg szurke-kek keszlet
+       geneikus dashboard-hatast keltett. */
+    --surface-0: #F0E6DA;   /* Oat  — az oldal alapja */
+    --surface-1: #FBF6ED;   /* vilagosabb oat — kartyak */
+    --surface-2: #E7DAC7;   /* halk kitoltes */
+    --border: #DCCDB6;
+    --text-primary: #2B2118;
+    --text-secondary: #5C4E40;
+    --text-muted: #8A7A68;
+    --accent: #75070C;      /* Cherry */
+    --series-init: #4F6815;      /* Olive */
+    --series-hot: #75070C;       /* Cherry */
+    --series-classify: #A8541F;  /* rozsda */
+    --series-geom: #1F5B57;      /* melyzold-kek */
+    --series-frame: #7A5C1E;     /* okker */
+    --status-good: #4F6815;
+    --status-warning: #A8541F;
+    /* A lepesenkenti ido ket fazisa: passzivan varunk a kezre (halk homok),
+       majd dolgozik a rendszer (cherry). */
+    --phase-hand: #D8C7AF;
+    --phase-system: #75070C;
+    --grid-line: #E3D6C4;
+    --mono: 'DM Sans', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --serif: 'Literata', Georgia, 'Times New Roman', serif;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -168,7 +175,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   header { display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
   .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-  h1 { font-size: clamp(24px, 3.2vw, 34px); margin: 0; font-weight: 650; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 { font-family: var(--serif); font-size: clamp(25px, 3.2vw, 36px); margin: 0; font-weight: 700; text-wrap: balance; letter-spacing: -0.01em; }
   .subhead { color: var(--text-secondary); font-size: 14.5px; max-width: 62ch; line-height: 1.55; }
 
   .run-picker { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
@@ -191,7 +198,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   section { display: flex; flex-direction: column; gap: 12px; }
   .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  h2 { font-size: 16px; margin: 0; font-weight: 640; }
+  h2 { font-family: var(--serif); font-size: 17.5px; margin: 0; font-weight: 700; letter-spacing: -0.005em; }
   .section-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; max-width: 60ch; }
 
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
@@ -231,12 +238,18 @@ TEMPLATE = r"""<!DOCTYPE html>
      Előbb a kéz mozgatja a bábut, utána dolgozik a rendszer — ezért a
      rendszer-szegmens a sáv VÉGÉN van (korábban az elején volt, ami
      félreérthető volt). */
-  .lat-row { display: flex; align-items: center; gap: 12px; }
+  .lat-row { display: flex; align-items: center; gap: 14px; }
+  /* A sav utan NINCS lathato "sin": a kitoltetlen resz felrevezetoen ugy
+     nezett ki, mintha az elfogadas utan is tortenne meg valami. A sav helye
+     viszont fix szeles marad, hogy a mellette allo szamok egy vonalban
+     alljanak minden sorban. */
   .lat-track { position: relative; height: 16px; width: 190px; flex: 0 0 190px;
-               background: var(--surface-2); border-radius: 4px; overflow: hidden; }
-  .lat-bar { position: absolute; inset: 0 auto 0 0; display: flex; border-radius: 4px; overflow: hidden; }
+               background: transparent; }
+  /* Szogletes szegmensek: a lekerekites egy nagyon rovid rendszer-szakaszbol
+     elvette volna a lathato reszt. */
+  .lat-bar { position: absolute; inset: 0; display: flex; border-radius: 2px 0 0 2px; overflow: hidden; }
   .lat-hand { background: var(--phase-hand); }
-  .lat-sys  { background: var(--phase-system); }
+  .lat-sys  { background: var(--phase-system); border-radius: 0; }
   .lat-nums { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
   .n-hand { color: var(--text-secondary); font-weight: 600; }
   .n-sys  { color: var(--phase-system); font-weight: 700; }
@@ -447,13 +460,12 @@ TEMPLATE = r"""<!DOCTYPE html>
     if (!moves.length) { section.style.display = 'none'; return; }
     section.style.display = '';
     const hasStatic = moves.some(m => m.latency_from_static_ms != null);
-    const maxLatency = Math.max(...moves.map(m => m.latency_ms));
 
     // Emberi olvasatu idotartam: masodperc 1 s felett, kulonben ms.
     const dur = (ms) => ms >= 1000 ? `${fmt(ms / 1000, 2)} s` : `${fmt(ms, 0)} ms`;
 
     const timeHeader = hasStatic
-      ? '<th>Mivel telt az idő <span style="font-weight:400;text-transform:none;font-size:10.5px">(kéz &rarr; rendszer)</span></th>'
+      ? '<th>Mivel telt az idő <span style="font-weight:400;text-transform:none;font-size:10.5px">(arány: kéz &rarr; rendszer)</span></th>'
       : '<th>Idő</th>';
     const theadHtml = `<thead><tr><th>#</th><th>Lépés</th><th>Frame-ek</th><th>Mód</th>${timeHeader}</tr></thead>`;
 
@@ -463,18 +475,21 @@ TEMPLATE = r"""<!DOCTYPE html>
         ? `<span class="mode-chip mode-fuzzy"><i class="dot"></i>fuzzy</span> <span style="color:var(--text-muted)">${m.mode.replace('fuzzy ', '')}</span>`
         : `<span class="mode-chip mode-exact"><i class="dot"></i>exact</span>`;
 
-      // A sav teljes hossza a leghosszabb lepeshez viszonyitva.
-      const pct = Math.max(2, (m.latency_ms / maxLatency) * 100);
-
+      // A sav MINDIG teljes szeles, es az ARANYT mutatja (mivel telt az ido).
+      // Ha a hosszat a leghosszabb lepeshez skalaznank, egyetlen kiugro
+      // (pl. 15 s-os) lepes 9-33 pixelre zsugoritana az osszes tobbit, es a
+      // bontasuk olvashatatlan lenne. A tenyleges idotartamok a szamokban.
       const sysMs = (hasStatic && m.latency_from_static_ms != null)
         ? Math.min(m.latency_from_static_ms, m.latency_ms) : null;
 
       let bar, nums;
       if (sysMs != null) {
         const handMs = Math.max(0, m.latency_ms - sysMs);
-        const sysPct = (sysMs / m.latency_ms) * 100;
-        // Idorendben: eloszor a kez (szurke), utana a rendszer (kek).
-        bar = `<span class="lat-bar" style="width:${pct}%">`
+        // A rendszer-szakasz legalabb 3 px, kulonben a nagyon gyors lepeseknel
+        // eltunne — pedig eppen az a lenyeg, hogy lathatoan kicsi.
+        const sysPct = Math.max(2, (sysMs / m.latency_ms) * 100);
+        // Idorendben: eloszor a kez (homok), utana a rendszer (cherry).
+        bar = `<span class="lat-bar">`
             + `<span class="lat-hand" style="width:${100 - sysPct}%" title="kéz a táblán: ${dur(handMs)}"></span>`
             + `<span class="lat-sys" style="width:${sysPct}%" title="rendszer: ${dur(sysMs)}"></span>`
             + `</span>`;
@@ -483,7 +498,7 @@ TEMPLATE = r"""<!DOCTYPE html>
              + `<span class="n-sys">${dur(sysMs)}</span>`
              + `<span class="n-total"> = ${dur(m.latency_ms)}</span>`;
       } else {
-        bar = `<span class="lat-bar" style="width:${pct}%"><span class="lat-hand" style="width:100%"></span></span>`;
+        bar = `<span class="lat-bar"><span class="lat-hand" style="width:100%"></span></span>`;
         nums = `<span class="n-total">${dur(m.latency_ms)}</span>`;
       }
 
