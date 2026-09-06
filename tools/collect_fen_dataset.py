@@ -35,7 +35,6 @@ Billentyűk az előnézeti ablakban:
     f      FEN bekérése a terminálban
     d      tábla újradetektálása (homográfia) — ha a kamera/tábla elmozdult
     o      címke-overlay ki/be a warpolt táblán
-    t      a felülnézeti kép forgatása/tükrözése (csak megjelenítés!)
     e      kamera exponálás / fehéregyensúly állapot kiírása
     q      kilépés
 
@@ -117,8 +116,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-check-model", action="store_true", help="ne futtassa a modell-alapú egyezés-ellenőrzést")
     p.add_argument("--max-mismatch", type=int, default=14,
                    help="ennyi vagy több eltérő mező a FEN és a modell között -> a fotót NEM menti (--force felülírja)")
-    p.add_argument("--view", choices=VIEW_MODES, default="v",
-                   help="a felulnezeti (warpolt) kep megjelenitesi orientacioja; futas kozben a 't' billentyu valtja")
     p.add_argument("--force", action="store_true", help="mentés az ellenőrzés figyelmeztetései ellenére is")
     return p.parse_args()
 
@@ -147,13 +144,10 @@ def render_board_diagram(fen: str, cell: int = 74) -> np.ndarray:
     pad = 26
     img = np.full((8 * cell + 2 * pad, 8 * cell + 2 * pad, 3), 245, dtype=np.uint8)
 
-    # Megjelenitesi tukrozes (lasd draw_label_overlay): a nyers racs (r, c)
-    # bal-felso mezoje h1, mi viszont a1-et akarunk oda. A fuggoleges
-    # tukrozes a racs SORAIT forditja meg -> bal-felso a1, jobb-also h8.
-    for gr in range(8):
+    for r in range(8):
         for c in range(8):
-            lab = labels[7 - gr][c]
-            x0, y0 = pad + c * cell, pad + gr * cell
+            lab = labels[r][c]
+            x0, y0 = pad + c * cell, pad + r * cell
             sq = chess.parse_square(lab.square)
             is_dark = (chess.square_file(sq) + chess.square_rank(sq)) % 2 == 0
             cv2.rectangle(img, (x0, y0), (x0 + cell, y0 + cell),
@@ -513,41 +507,11 @@ def prompt_fen(current: str | None) -> str | None:
 # Overlay
 # ---------------------------------------------------------------------------
 
-# Megjelenitesi orientaciok. CSAK a kijelzest forgatjak — a cimkezes utja
-# (fen_to_raw_labels -> standard_to_raw) valtozatlan, barmelyik van kivalasztva.
-VIEW_MODES = ("none", "v", "h", "180")
-VIEW_HELP = {"none": "eredeti", "v": "fuggoleges tukrozes", "h": "vizszintes tukrozes", "180": "180 fok"}
-
-
-def _view_transform(img: np.ndarray, mode: str) -> np.ndarray:
-    if mode == "v":
-        return cv2.flip(img, 0)
-    if mode == "h":
-        return cv2.flip(img, 1)
-    if mode == "180":
-        return cv2.flip(img, -1)
-    return img
-
-
-def _view_bbox(bbox, mode: str, H: int, W: int):
-    """A bbox koordinatai a transzformalt kepen (hogy a feliratok ne alljanak fejre)."""
-    x0, y0, x1, y1 = bbox
-    if mode in ("v", "180"):
-        y0, y1 = H - y1, H - y0
-    if mode in ("h", "180"):
-        x0, x1 = W - x1, W - x0
-    return x0, y0, x1, y1
-
-
-def draw_label_overlay(img_warp: np.ndarray, det: DetectionResult, labels, check: dict | None,
-                       size: int = 640, view: str = "v") -> np.ndarray:
-    # A kepet ELOBB transzformaljuk, es a dobozokat mar az uj koordinatakra
-    # rajzoljuk — igy a feliratok allva maradnak.
-    vis = _view_transform(img_warp, view)
-    H, W = vis.shape[:2]
+def draw_label_overlay(img_warp: np.ndarray, det: DetectionResult, labels, check: dict | None, size: int = 640) -> np.ndarray:
+    vis = img_warp.copy()
     for r in range(8):
         for c in range(8):
-            x0, y0, x1, y1 = _view_bbox(det.bbox_warp[r][c], view, H, W)
+            x0, y0, x1, y1 = det.bbox_warp[r][c]
             lab = labels[r][c]
             color = (0, 200, 0) if lab.occ == 1 else (0, 0, 255) if lab.occ == 2 else (160, 160, 160)
             cv2.rectangle(vis, (x0, y0), (x1, y1), color, 2)
@@ -624,13 +588,12 @@ def main() -> None:
     print(f"Session: {args.session} | kimenet: {args.out_dir.resolve()}")
     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}")
     print_position_help(fen)
-    print("SPACE=fotó  n=következő FEN  f=FEN bekérés  d=újradetektálás  o=overlay  t=nézet forgatás  e=exponálás  q=kilépés")
+    print("SPACE=fotó  n=következő FEN  f=FEN bekérés  d=tábla újradetektálás  o=overlay  e=exponálás  q=kilépés")
 
     det: DetectionResult | None = None
     labels = fen_to_raw_labels(fen)
     fen_occ = fen_to_raw_occupancy(fen)
     show_overlay = True
-    view_mode = args.view   # a felulnezeti kep megjelenitesi orientacioja ('t' billentyu valtja
     last_check: dict | None = None
     brightness = deque(maxlen=60)
     shot_index = 0
@@ -699,17 +662,13 @@ def main() -> None:
             if show_overlay and det is not None:
                 img_warp = cv2.warpPerspective(frame, det.M, cfg.warp_size, flags=cv2.WARP_INVERSE_MAP)
                 cv2.imshow(WIN_OVERLAY,
-                           draw_label_overlay(img_warp, det, labels, last_check, view=view_mode))
+                           draw_label_overlay(img_warp, det, labels, last_check))
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("d"):
                 redetect(frame)
-            elif key == ord("t"):
-                view_mode = VIEW_MODES[(VIEW_MODES.index(view_mode) + 1) % len(VIEW_MODES)]
-                print(f"  felulnezeti kep orientacio: {view_mode} ({VIEW_HELP[view_mode]}) "
-                      f"— ha ez a jo, inditsd igy: --view {view_mode}")
             elif key == ord("o"):
                 show_overlay = not show_overlay
                 if not show_overlay:
