@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any, Iterable, Sequence
 
 import chess
 
@@ -115,6 +115,62 @@ def weighted_diff(
     return total
 
 
+# ---------------------------------------------------------------------------
+# Bábutípus-tipp (a vision típus-fejéből) — EGYELŐRE csak promóciónál használjuk
+# ---------------------------------------------------------------------------
+
+# A típus-fej kimeneti sorrendje: (none, pawn, knight, bishop, rook, queen, king)
+# — ugyanaz, mint vision/models/square_net.PIECE_TYPE_CLASSES (teszt köti össze
+# a kettőt; a chess_logic szándékosan nem importál vision/torch modult).
+TYPE_INDEX = {"none": 0, "pawn": 1, "knight": 2, "bishop": 3, "rook": 4, "queen": 5, "king": 6}
+PROMOTION_TYPE_INDEX = {"q": TYPE_INDEX["queen"], "r": TYPE_INDEX["rook"],
+                        "b": TYPE_INDEX["bishop"], "n": TYPE_INDEX["knight"]}
+PIECE_TYPE_TO_TYPE_INDEX = {
+    chess.PAWN: 1, chess.KNIGHT: 2, chess.BISHOP: 3, chess.ROOK: 4, chess.QUEEN: 5, chess.KING: 6,
+}
+# Ennél kisebb valószínűségű típus-tippet nem hiszünk el promóciónál: marad a vezér.
+DEFAULT_PROMOTION_MIN_CONF = 0.50
+
+TypeProbGrid = Any   # 8x8 rács, elemenként 7 hosszú valószínűség-vektor (lista vagy numpy), standard orientáció
+
+
+def _type_probs_at(type_probs: TypeProbGrid | None, row: int, col: int):
+    if type_probs is None:
+        return None
+    try:
+        v = type_probs[row][col]
+    except (IndexError, KeyError, TypeError):
+        return None
+    if v is None:
+        return None
+    v = [float(x) for x in v]
+    return v if len(v) == len(TYPE_INDEX) else None
+
+
+def promotion_preference(
+    type_probs: TypeProbGrid | None,
+    to_row: int,
+    to_col: int,
+    *,
+    min_conf: float = DEFAULT_PROMOTION_MIN_CONF,
+) -> list[str]:
+    """
+    A promóciós bábu sorrendje ('q','r','b','n' permutációja) a típus-fej
+    célmezőn mért kimenete alapján. Ha nincs tipp, vagy a legvalószínűbb
+    promóciós típus valószínűsége min_conf alatt van, a vezér az első (a
+    korábbi viselkedés). A visszaadott sorrend első eleme nyer, mert a négy
+    promóció foglaltság szerint megkülönböztethetetlen.
+    """
+    default = ["q", "r", "b", "n"]
+    v = _type_probs_at(type_probs, to_row, to_col)
+    if v is None:
+        return default
+    scored = sorted(default, key=lambda ch: (-v[PROMOTION_TYPE_INDEX[ch]], default.index(ch)))
+    if v[PROMOTION_TYPE_INDEX[scored[0]]] < min_conf:
+        return default
+    return scored
+
+
 def _promotion_priority(move: chess.Move) -> int:
     if move.promotion is None:
         return 0
@@ -123,8 +179,69 @@ def _promotion_priority(move: chess.Move) -> int:
     return 2
 
 
-def _ordered_legal_moves(ch_board: chess.Board) -> list[chess.Move]:
-    return sorted(ch_board.legal_moves, key=_promotion_priority)
+def _ordered_legal_moves(
+    ch_board: chess.Board,
+    type_probs: TypeProbGrid | None = None,
+    promotion_min_conf: float = DEFAULT_PROMOTION_MIN_CONF,
+) -> list[chess.Move]:
+    """Legális lépések: előbb a nem-promóciók, aztán a promóciók a típus-tipp
+    (vagy alapból a vezér) szerinti sorrendben. Promóció nélkül a sorrend a
+    régi (_promotion_priority)."""
+    moves = list(ch_board.legal_moves)
+    if type_probs is None or not any(m.promotion for m in moves):
+        return sorted(moves, key=_promotion_priority)
+
+    def key(m: chess.Move):
+        if m.promotion is None:
+            return (0, 0)
+        to_row, to_col = chess_square_to_coords(m.to_square)
+        pref = promotion_preference(type_probs, to_row, to_col, min_conf=promotion_min_conf)
+        return (1, pref.index(_promotion_char(m.promotion)))
+
+    return sorted(moves, key=key)
+
+
+# ---------------------------------------------------------------------------
+# Inkrementális foglaltság: a lépés utáni rács a lépés előttiből, másolás nélkül
+# ---------------------------------------------------------------------------
+
+def expected_occupancy_after_move(
+    ch_board: chess.Board,
+    move: chess.Move,
+    occ_before: Sequence[Sequence[int]],
+) -> list[list[int]]:
+    """
+    A `move` utáni foglaltság az `occ_before`-ból (ami ch_board foglaltsága).
+    Ugyanazt adja, mint board.copy() + push() + board_to_occupancy(), csak
+    ~100x olcsóbban: egy lépés legfeljebb 4 mezőt érint (honnan, hova, en
+    passant-nál a leütött gyalog, sáncnál a bástya). A szabálylogika marad a
+    python-chess-é (legal_moves, is_en_passant, is_castling) — ez a függvény
+    csak a foglaltság-diffet írja fel. tests/test_resolver_incremental.py a
+    referencia-úttal veti össze minden lépésre.
+    """
+    occ = [list(row) for row in occ_before]
+    color = 1 if ch_board.turn == chess.WHITE else 2
+
+    fr, fc = chess_square_to_coords(move.from_square)
+    tr, tc = chess_square_to_coords(move.to_square)
+    occ[fr][fc] = 0
+    occ[tr][tc] = color
+
+    if ch_board.is_en_passant(move):
+        # a leütött gyalog a célmező oszlopában, a kiinduló mező sorában áll
+        occ[fr][tc] = 0
+    elif ch_board.is_castling(move):
+        rank = chess.square_rank(move.from_square)
+        if chess.square_file(move.to_square) > chess.square_file(move.from_square):
+            rook_from, rook_to = chess.square(7, rank), chess.square(5, rank)   # h -> f
+        else:
+            rook_from, rook_to = chess.square(0, rank), chess.square(3, rank)   # a -> d
+        rf_r, rf_c = chess_square_to_coords(rook_from)
+        rt_r, rt_c = chess_square_to_coords(rook_to)
+        occ[rf_r][rf_c] = 0
+        occ[rt_r][rt_c] = color
+
+    return occ
 
 
 def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
@@ -167,6 +284,12 @@ def chess_move_to_moveguess(board, move: chess.Move) -> MoveGuess:
     )
 
 
+def _moving_type_index(ch_board: chess.Board, move: chess.Move) -> int:
+    """A célmezőre kerülő bábu típus-indexe (promóciónál a promotált bábué)."""
+    if move.promotion is not None:
+        return PIECE_TYPE_TO_TYPE_INDEX[move.promotion]
+    piece = ch_board.piece_at(move.from_square)
+    return PIECE_TYPE_TO_TYPE_INDEX[piece.piece_type] if piece is not None else 0
 
 
 def resolve_move_from_occupancy(
@@ -176,52 +299,77 @@ def resolve_move_from_occupancy(
     *,
     max_noise_cells: int = 2,
     max_weighted_cost: float = 1.2,
+    min_changed_cells: int = 2,
+    type_probs: TypeProbGrid | None = None,
+    promotion_min_conf: float = DEFAULT_PROMOTION_MIN_CONF,
+    use_type_hint_for_moves: bool = False,
 ) -> tuple[MoveGuess | None, list[list[int]] | None, str | None]:
     """
     Exact, majd opcionálisan fuzzy legal move feloldás.
     A sakklogika teljes egészében itt marad, nem a vision trackerben.
+
+    min_changed_cells: a megfigyelt rács legalább ennyi mezőben térjen el a
+        jelenlegi állástól — minden legális lépés >= 2 mezőt változtat, az
+        1 mezős eltérés zaj, arra a fuzzy ág SEM tippelhet lépést (ez volt a
+        korábbi hamis-elfogadási út: "eltűnt" egy bábu, a resolver pedig a
+        legkisebb konfidenciájú célmezőt választotta hozzá).
+    type_probs: a vision típus-fejének 8x8x7 kimenete (standard orientáció).
+        EGYELŐRE csak a promóciós bábu kiválasztásához használjuk.
+    use_type_hint_for_moves: kapcsoló a jövőbeli kiterjesztéshez — True esetén
+        az AZONOS költségű fuzzy jelöltek között a típus-fej dönt (a célmezőre
+        kerülő bábu típusának valószínűsége). Alapból False: a 3-osztályos út
+        viselkedése változatlan.
     """
     ch_board = _as_chess_board(current_board)
+    occ_before = board_to_occupancy(ch_board)
 
-    best_exact_move: MoveGuess | None = None
-    best_exact_occ: list[list[int]] | None = None
+    if occupancy_distance(observed_occ, occ_before) < min_changed_cells:
+        return None, None, None
 
-    for mv in _ordered_legal_moves(ch_board):
-        tmp = ch_board.copy()
-        tmp.push(mv)
-        expected_occ = board_to_occupancy(tmp)
+    ordered = _ordered_legal_moves(ch_board, type_probs, promotion_min_conf)
 
+    for mv in ordered:
+        expected_occ = expected_occupancy_after_move(ch_board, mv, occ_before)
         if same_occupancy(expected_occ, observed_occ):
-            best_exact_move = chess_move_to_moveguess(ch_board, mv)
-            best_exact_occ = expected_occ
-            break
-
-    if best_exact_move is not None:
-        return best_exact_move, best_exact_occ, "exact"
+            return chess_move_to_moveguess(ch_board, mv), expected_occ, "exact"
 
     if observed_conf is None:
         return None, None, None
 
     best = None
 
-    for mv in _ordered_legal_moves(ch_board):
-        tmp = ch_board.copy()
-        tmp.push(mv)
-        expected_occ = board_to_occupancy(tmp)
+    for mv in ordered:
+        expected_occ = expected_occupancy_after_move(ch_board, mv, occ_before)
 
         noise = occupancy_distance(expected_occ, observed_occ)
         if noise > max_noise_cells:
             continue
 
+        # Geometriai feltétel: a célmezőt FOGLALTNAK kell látni. A zaj csak
+        # szín-tévesztés lehet (vagy sánc/en passant mellékmezője), nem az,
+        # hogy "a bábu még nem érkezett meg" — az utóbbi félkész lépés
+        # (leütött bábu levéve, a lépő még kézben), arra nem tippelünk.
+        to_row, to_col = chess_square_to_coords(mv.to_square)
+        if int(observed_occ[to_row][to_col]) == 0:
+            continue
+
         cost = weighted_diff(observed_occ, expected_occ, observed_conf)
 
-        if best is None or (cost < best[0]) or (cost == best[0] and noise < best[1]):
-            best = (cost, noise, mv, expected_occ)
+        # rangsor: költség, zaj; opcionálisan (kapcsolóval) a típus-fej egyezése
+        type_score = 0.0
+        if use_type_hint_for_moves and type_probs is not None:
+            v = _type_probs_at(type_probs, to_row, to_col)
+            if v is not None:
+                type_score = -v[_moving_type_index(ch_board, mv)]
+        key = (cost, noise, type_score)
+
+        if best is None or key < best[0]:
+            best = (key, mv, expected_occ)
 
     if best is None:
         return None, None, None
 
-    cost, noise, mv, expected_occ = best
+    (cost, noise, _), mv, expected_occ = best
     if cost > max_weighted_cost:
         return None, None, None
 
@@ -230,3 +378,32 @@ def resolve_move_from_occupancy(
         expected_occ,
         f"fuzzy c={cost:.2f} n={noise}",
     )
+
+
+def _changed_cells_of(occ_before: Sequence[Sequence[int]], occ_after: Sequence[Sequence[int]]) -> dict[tuple[int, int], int]:
+    return {(r, c): int(occ_after[r][c]) for r in range(8) for c in range(8) if int(occ_before[r][c]) != int(occ_after[r][c])}
+
+
+def prefix_ambiguities(current_board, move: chess.Move | str) -> list[str]:
+    """
+    Azok a legális lépések (UCI), amelyeknek a `move` foglaltság-változása
+    VALÓDI RÉSZHALMAZA — vagyis a `move` megfigyelt állapota egy másik, még
+    folyamatban lévő lépés köztes állapota is lehet. A gyakorlatban: a
+    bástyával KEZDETT sánc (h1->f1 megfigyelve, a király még e1-en) pontosan a
+    Rf1 lépésnek látszik, miközben O-O készül. A hívó (tracker) ilyenkor
+    hosszabb megerősítési időt vár, mielőtt elfogadja a rövidebb lépést.
+    Nem-sánc állásokban üres lista (a többi lépéstípusnak nincs legális
+    "előtagja" a foglaltság szintjén).
+    """
+    ch_board = _as_chess_board(current_board)
+    mv = chess.Move.from_uci(move) if isinstance(move, str) else move
+    occ0 = board_to_occupancy(ch_board)
+    mine = _changed_cells_of(occ0, expected_occupancy_after_move(ch_board, mv, occ0))
+    out: list[str] = []
+    for other in ch_board.legal_moves:
+        if other == mv:
+            continue
+        theirs = _changed_cells_of(occ0, expected_occupancy_after_move(ch_board, other, occ0))
+        if len(theirs) > len(mine) and all(theirs.get(cell) == val for cell, val in mine.items()):
+            out.append(other.uci())
+    return out

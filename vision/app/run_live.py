@@ -62,11 +62,14 @@ class LiveConfig:
     camera_height: int = 1080
     camera_fps: int = 30
 
-    # 30 fps capture / 3 = 10 fps processing (~100 ms budget). Measured
-    # frame_total is p50 8 ms, p95 66 ms, so this fits with margin; the old
-    # value of 6 was tuned before partial reclassify existed and just added
-    # latency to every stabilizer gate.
-    process_every_nth_captured_frame: int = 3
+    # 1 = minden capture-frame feldolgozása (30 fps, ~33 ms keret). Mért
+    # képkockánkénti költség (MobileNetV3 @128, ORT, 1080p): részleges út
+    # ~15 ms, teljes ~35 ms — ha egy frame túlcsúszik, a worker egyszerűen a
+    # legfrissebb frame-et veszi (természetes visszanyomás, nincs sorban
+    # állás). A régi 3 (10 fps) minden stabilizer-kapunak 100 ms-os
+    # granularitást adott; a stabilizer ablakai most fali időben mérnek, így
+    # a frame-ráta csak a granularitást javítja, a védelmet nem rövidíti.
+    process_every_nth_captured_frame: int = 1
     preview_max_width: int = 1280
 
     show_preview: bool = True
@@ -124,6 +127,14 @@ class BackendSyncClient:
 
     def new_game(self) -> dict:
         return self._request_json("POST", "/api/new-game")
+
+    def current_fen(self) -> str | None:
+        """A backend aktuális állása (GET /api/state -> fen), vagy None ha nem elérhető."""
+        try:
+            fen = self._request_json("GET", "/api/state").get("fen")
+            return str(fen) if fen else None
+        except Exception:
+            return None
 
     def push_move(self, uci: str) -> dict:
         return self._request_json("POST", "/api/move", {"uci": uci})
@@ -289,9 +300,14 @@ class LiveProcessor:
         self._thread.start()
         return self
 
-    def _reset_tracker(self):
+    def _reset_tracker(self, start_fen: str | None = None):
+        """Új tracker. start_fen: ha adott, ebből az állásból inicializál (a
+        robot lépése után a backend aktuális állása), különben AppConfig.start_fen."""
+        cfg = self.app_cfg
+        if start_fen and start_fen != cfg.start_fen:
+            cfg = AppConfig(**{**cfg.__dict__, "start_fen": start_fen})
         with self._tracker_lock:
-            self.tracker = ChessVisionTracker(self.app_cfg)
+            self.tracker = ChessVisionTracker(cfg)
         with self._state_lock:
             self._reset_runtime_state()
 
@@ -429,11 +445,15 @@ class LiveProcessor:
                 time.sleep(0.05)
                 continue
 
-            # Robot éppen befejezte a mozgást → tracker reset az új pozícióból
+            # Robot éppen befejezte a mozgást → tracker reset az ÚJ pozícióból.
+            # A backend a robot lépését a saját játékára már alkalmazta; a vision
+            # saját Game-je ezt nem látta, ezért a backend aktuális FEN-jéről
+            # indulunk újra (különben az init az alapállást várná: init-too-far).
             if self._robot_was_busy and not robot_busy:
                 self._robot_was_busy = False
-                logger.info("Robot kész — tracker reset az új pozícióból.")
-                self._reset_tracker()
+                fen = self.backend.current_fen() if self.backend is not None else None
+                logger.info("Robot kész — tracker reset az új pozícióból (%s).", fen or "AppConfig.start_fen")
+                self._reset_tracker(start_fen=fen)
                 time.sleep(1.0)  # 1 másodperc türelmi idő mielőtt újra detektálunk
                 continue
 
@@ -486,10 +506,23 @@ class LiveProcessor:
                         latency_ms = (t_done - disturbance_t0) * 1000.0
                     else:
                         latency_ms = None
+                    # A tracker accept_info-ja: a végállapot első frame-je
+                    # (candidate_since) és az utolsó mozgás (last_motion_t) —
+                    # ezek adják a PIPELINE latenciáját; a latency_ms a kéz
+                    # megjelenésétől mér, abban a lépés fizikai ideje is benne van.
+                    info = result.accept_info or {}
+                    t_acc = info.get("t_accept")
+                    lat_state = lat_static = None
+                    if t_acc is not None and info.get("candidate_since") is not None:
+                        lat_state = (t_acc - info["candidate_since"]) * 1000.0
+                    if t_acc is not None and info.get("last_motion_t") is not None:
+                        lat_static = (t_acc - info["last_motion_t"]) * 1000.0
                     self._move_records.append({
                         "move_num": move_count,
                         "uci": result.uci or "",
                         "latency_ms": f"{latency_ms:.2f}" if latency_ms is not None else "",
+                        "latency_from_state_ms": f"{lat_state:.2f}" if lat_state is not None else "",
+                        "latency_from_static_ms": f"{lat_static:.2f}" if lat_static is not None else "",
                         "frames_to_detect": disturbance_frames,
                         "mode": result.mode or "",
                     })
@@ -571,7 +604,8 @@ class LiveProcessor:
             logger.info("Nem volt detektált lépés — moves.csv nem mentve.")
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        fieldnames = ["move_num", "uci", "latency_ms", "frames_to_detect", "mode"]
+        fieldnames = ["move_num", "uci", "latency_ms", "latency_from_state_ms", "latency_from_static_ms",
+                      "frames_to_detect", "mode"]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -599,27 +633,27 @@ class LiveProcessor:
 
         logger.info("-" * w)
 
-        latencies = []
-        for r in self._move_records:
-            if r.get("latency_ms"):
-                try:
-                    latencies.append(float(r["latency_ms"]))
-                except ValueError:
-                    pass
+        def _col(key):
+            out = []
+            for r in self._move_records:
+                if r.get(key):
+                    try:
+                        out.append(float(r[key]))
+                    except ValueError:
+                        pass
+            return out
 
-        if not latencies:
-            logger.info("  Nincs mérhető lépés latencia.")
-            logger.info("=" * w)
-            return
-
-        s = sorted(latencies)
-        n = len(s)
-        logger.info("  Detektált lépések:       %d", n)
-        logger.info("  Átlag latencia:          %.1f ms", _statistics.mean(s))
-        logger.info("  Min latencia:            %.1f ms", s[0])
-        logger.info("  Max latencia:            %.1f ms", s[-1])
-        logger.info("  Medián (p50):            %.1f ms", s[n // 2])
-        logger.info("  95. percentilis (p95):   %.1f ms", s[min(int(n * 0.95), n - 1)])
+        logger.info("  Detektált lépések:       %d", len(self._move_records))
+        for key, label in (("latency_ms", "kéz megjelenésétől (fizikai lépés + pipeline)"),
+                           ("latency_from_state_ms", "a végállapot első frame-jétől (PIPELINE)"),
+                           ("latency_from_static_ms", "az utolsó mozgástól (PIPELINE)")):
+            vals = sorted(_col(key))
+            if not vals:
+                logger.info("  %-40s nincs adat", label + ":")
+                continue
+            n = len(vals)
+            logger.info("  %-40s átlag %.0f | p50 %.0f | p95 %.0f | max %.0f ms",
+                        label + ":", _statistics.mean(vals), vals[n // 2], vals[min(int(n * 0.95), n - 1)], vals[-1])
         logger.info("=" * w)
 
 

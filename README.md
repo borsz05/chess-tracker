@@ -93,6 +93,17 @@ python -m tools.export_onnx --weights vision/models/weights/resnet18_best_topdow
 
 This writes `resnet18_best_topdown.onnx` plus a `.onnx.json` sidecar (class order, image size, normalisation), checks that `.pt` and `.onnx` predictions match, and, with `--int8`, evaluates static/dynamic INT8 quantisation. If the INT8 model does not lose `black` recall, the sidecar records it as `recommended_int8` and `AppConfig.inference_backend="auto"` loads that file (`allow_int8=False` forces fp32). The same exporter works for the multi-task `MultiTaskSquareNet` checkpoints produced by `tools/train_square_classifier.py`.
 
+### Measuring and tuning the pipeline (`tools/`)
+
+```bash
+python -m tools.measure_pipeline_noise frames        # classifier noise on the saved FEN frames (real crop path)
+python -m tools.measure_pipeline_noise video rec.avi # static-board flicker + motion baseline
+python -m tools.replay_frames sessions               # offline replay of the saved positions as games (latency / false accepts)
+python -m tools.record_camera --out recordings/g1    # record a real game for offline replay: python -m tools.replay_frames video recordings/g1
+```
+
+See `docs/pipeline_tuning.md` for the measured numbers behind every threshold.
+
 ### Training data and model training (`tools/`)
 
 | Script | Purpose |
@@ -350,15 +361,33 @@ The container uses `network_mode: "host"` — all ports are shared with the host
 | `init_buffer_frames` | 3 | Frames averaged for initial position baseline |
 | `init_max_dist` | 2 | Max Hamming distance from expected start during init |
 | `partial_reclassify` | True | Only re-classify squares that changed (faster) |
-| `full_reclassify_interval` | 30 | Force full classification every N frames |
+| `rolling_refresh_squares` | 8 | Extra squares re-classified every frame in round-robin (all 64 refreshed every ~270 ms at 30 fps) |
+| `full_reclassify_interval` | 90 | Force full classification every N frames (backstop; also triggered on demand when the stabilizer sees an unresolvable state) |
+| `wakeup_full_reclassify_s` | 0.5 | Min interval between on-demand full reclassifications |
+| `motion_ref_age_s` | 0.10 | Motion is measured against the previous frame and a frame this old (max of the two) |
+| `prefix_ambiguity_extra_s` | 1.0 | Extra confirmation when the resolved move is a prefix of another legal move (rook-first castling) |
+| `promotion_min_conf` / `promotion_wait_s` | 0.50 / 5.0 | Type-head threshold for the promotion piece; how long to wait for the pawn to be swapped |
+| `use_type_hint_for_moves` | False | Future switch: use the type head beyond promotions (tie-break among fuzzy candidates) |
+| `redetect_after_stuck_s` / `redetect_min_interval_s` | 4.0 / 5.0 | Re-solve the homography when the stabilizer cannot settle |
+| `redetect_align_orientation` | True | After (re)detection, rotate the bbox grid to match the accepted position (the detector's grid orientation is not stable) |
+
+Stabilizer thresholds live in `STABILIZER_PARAMS` (same file); every value is documented with its measurement in `vision/pipeline/stabilizer.py` and `docs/pipeline_tuning.md`:
+
+| Field | Default | Description |
+|---|---|---|
+| `min_stable_s` / `min_stable_frames` | 0.25 s / 3 | Wall-time and frame-count persistence of a candidate grid before it can be emitted |
+| `motion_threshold` / `min_static_s` | 12.0 / 0.20 s | Motion gate: per-square mean abs diff above which the board is "moving"; quiet time required after motion |
+| `min_changed_for_move` / `max_changed_for_move` | 2 / 6 | Every legal move changes 2–4 squares; a 1-square difference is never emitted |
+| `min_changed_conf` / `frame_reject_mean_conf` | 0.40 / 0.60 | Confidence floor on the changed squares; whole-frame rejection floor |
+| `flicker_tolerance_cells` / `max_candidate_misses` | 1 / 3 | A 1-square flicker does not reset persistence; adopted after 3 consecutive misses |
 
 ### `vision/app/run_live.py` — `LiveConfig`
 
 | Field | Default | Description |
 |---|---|---|
-| `camera_index` | 0 | OpenCV camera index |
-| `camera_width` / `camera_height` | 1280 × 720 | Capture resolution |
-| `process_every_nth_captured_frame` | 6 | Skip N−1 frames between processing steps |
+| `camera_index` | 4 | OpenCV camera index |
+| `camera_width` / `camera_height` | 1920 × 1080 | Capture resolution (MJPG) |
+| `process_every_nth_captured_frame` | 1 | Process every captured frame (the worker always takes the newest frame, so slow frames are skipped naturally) |
 | `backend_origin` | `http://127.0.0.1:8001` | Backend URL |
 | `auto_reset_on_init_detect_fail_streak` | 60 | Auto-reset after N consecutive detection failures |
 
@@ -387,7 +416,7 @@ The container uses `network_mode: "host"` — all ports are shared with the host
 
 ## Known Limitations
 
-1. **Board detection is one-time.** The homography is computed once at startup and is fixed for the session. If the camera or board shifts during play, press `r` in the preview window to reset.
+1. **Board detection is solved at startup and re-solved only on demand.** If the stabilizer cannot settle for `redetect_after_stuck_s`, the homography is re-solved (~165 ms) and its orientation is re-aligned to the accepted position. A large shift may still need `r` in the preview window to reset.
 
 2. **Robot execution is not automatically triggered.** The vision pipeline detects moves and pushes them to the backend via HTTP. The integration layer that calls `build_move_descriptor` → `RobotImpl.execute_move` on each detected move must be wired in by the developer. The building blocks are all present in the `robot/` module.
 

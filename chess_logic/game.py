@@ -3,7 +3,7 @@ from __future__ import annotations
 import chess
 import chess.pgn
 
-from .resolver import chess_move_to_moveguess, resolve_move_from_occupancy
+from .resolver import chess_move_to_moveguess, prefix_ambiguities, resolve_move_from_occupancy
 from .move_types import MoveGuess, MoveRecord, OccupancyResolveResult
 
 
@@ -163,13 +163,28 @@ class Game:
         *,
         max_noise_cells: int = 2,
         max_weighted_cost: float = 1.2,
+        min_changed_cells: int = 2,
+        type_probs=None,
+        promotion_min_conf: float | None = None,
+        use_type_hint_for_moves: bool = False,
     ) -> OccupancyResolveResult:
+        """Foglaltság -> legális lépés (lásd resolver.resolve_move_from_occupancy).
+        type_probs: a vision típus-fejének 8x8x7 rácsa — egyelőre csak a
+        promóciós bábu kiválasztásához; use_type_hint_for_moves a jövőbeli,
+        teljes lépésdetektálási használat kapcsolója (alapból ki)."""
+        kwargs = {}
+        if promotion_min_conf is not None:
+            kwargs["promotion_min_conf"] = promotion_min_conf
         move, expected_occ, mode = resolve_move_from_occupancy(
             self.board,
             new_occ,
             confs,
             max_noise_cells=max_noise_cells,
             max_weighted_cost=max_weighted_cost,
+            min_changed_cells=min_changed_cells,
+            type_probs=type_probs,
+            use_type_hint_for_moves=use_type_hint_for_moves,
+            **kwargs,
         )
 
         if move is None:
@@ -187,6 +202,7 @@ class Game:
             san=None,
             mode=mode or "exact",
             expected_occ=expected_occ,
+            ambiguous_with=prefix_ambiguities(self.board, move.to_uci()),
         )
 
     def _build_status_dict(self, last_record: MoveRecord | None) -> dict:

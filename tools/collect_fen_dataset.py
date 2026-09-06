@@ -75,6 +75,7 @@ from vision.app.config import AppConfig  # noqa: E402
 from vision.app.run_live import LiveConfig  # noqa: E402
 from vision.pipeline.batch_classifier import crop_with_context  # noqa: E402
 from vision.pipeline.board_detector import DetectionResult, detect_board_on_frame  # noqa: E402
+from vision.pipeline.orientation import apply_symmetry, symmetries  # noqa: E402
 
 COLOR_DIRS = ("black", "empty", "white")
 CSV_FIELDS = [
@@ -321,33 +322,11 @@ class ModelChecker:
         flat = [rois[r][c] for r in range(8) for c in range(8)]
         return self.model.predict_rois(flat).labels.reshape(8, 8).astype(np.int32)
 
-    @staticmethod
-    def apply_symmetry(grid: np.ndarray | list[list], name: str):
-        """Ugyanaz a transzformacio, mint a `symmetries`-ben — de barmilyen
-        8x8 racsra (pl. SquareLabel objektumokra) alkalmazhato."""
-        if isinstance(grid, np.ndarray):
-            a = grid
-        else:
-            a = np.empty((8, 8), dtype=object)
-            for r in range(8):
-                for c in range(8):
-                    a[r, c] = grid[r][c]
-        k = int(name.replace("+flip", "").replace("rot", "")) // 90
-        out = np.rot90(a, k)
-        if name.endswith("+flip"):
-            out = np.fliplr(out)
-        if isinstance(grid, np.ndarray):
-            return np.ascontiguousarray(out)
-        return [[out[r, c] for c in range(8)] for r in range(8)]
-
-    @staticmethod
-    def symmetries(grid: np.ndarray) -> list[tuple[str, np.ndarray]]:
-        out = []
-        for k in range(4):
-            g = np.rot90(grid, k)
-            out.append((f"rot{90*k}", g))
-            out.append((f"rot{90*k}+flip", np.fliplr(g)))
-        return out
+    # A szimmetria-segédek az éles pipeline moduljában élnek
+    # (vision/pipeline/orientation.py) — ugyanazt használja a tracker az
+    # újradetektálás utáni igazításhoz, így a két út nem csúszhat szét.
+    apply_symmetry = staticmethod(apply_symmetry)
+    symmetries = staticmethod(symmetries)
 
     def check(self, rois, fen_occ: np.ndarray) -> dict:
         pred = self.predict_occupancy(rois)

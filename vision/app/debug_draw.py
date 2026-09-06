@@ -39,9 +39,13 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
     backend_err = state["last_backend_error"]
     backend_err_text = backend_err[:70] if backend_err else "-"
 
+    motion = getattr(result, "motion", None) if result is not None else None
+    reason = getattr(result, "reason", "") if result is not None else ""
+
     return [
         f"Status: {status}",
         f"Tracker mode: {mode}",
+        f"Stabilizer: {reason or '-'} | motion: {motion:.1f}" if motion is not None else f"Stabilizer: {reason or '-'}",
         f"Last accepted: {san} [{uci}] ({san_mode}) | {secs_since_accept} ago",
         f"Moves accepted: {state['move_count']}",
         f"Backend sync: {backend_status}",

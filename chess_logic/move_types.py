@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 FILES = "abcdefgh"
 
@@ -75,3 +75,7 @@ class OccupancyResolveResult:
     san: str | None = None
     mode: str | None = None
     expected_occ: list[list[int]] | None = None
+    # Legális lépések (UCI), amelyeknek a talált lépés a foglaltság szintjén
+    # előtagja (pl. Rf1 <- O-O bástyával kezdve). Ha nem üres, a tracker
+    # hosszabb megerősítést vár. Lásd resolver.prefix_ambiguities.
+    ambiguous_with: list[str] = field(default_factory=list)

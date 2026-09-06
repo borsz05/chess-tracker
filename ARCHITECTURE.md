@@ -52,7 +52,7 @@ This document describes the full data flow, component responsibilities, coordina
 - Warp every subsequent frame to a flat top-down view using the stored 3×3 homography matrix
 - Classify all 64 squares per frame with ResNet18 batch inference (3 classes: empty / white-piece / black-piece)
 - Apply pixel-diff-based partial reclassification — only re-infer squares that changed by more than a threshold
-- Gate noisy outputs through `StateStabilizer` (majority vote over a sliding buffer, hysteresis)
+- Gate noisy outputs through `StateStabilizer` (wall-time persistence, motion gate, ≥2-cell invariant)
 - Resolve the stable occupancy grid to a legal UCI move via `resolve_move_from_occupancy`
 - Push accepted moves to the backend via `BackendSyncClient → POST /api/move`
 
@@ -63,7 +63,7 @@ This document describes the full data flow, component responsibilities, coordina
 | `LatestFrameCamera` | `vision/app/run_live.py` | Thread-safe single-frame camera buffer |
 | `LiveProcessor` | `vision/app/run_live.py` | Processing loop, backend sync, auto-reset |
 | `ChessVisionTracker` | `vision/pipeline/tracker.py` | Main pipeline: detect → classify → stabilize → resolve |
-| `StateStabilizer` | `chess_logic/stabilizer.py` | Vision→chess handoff gating |
+| `StateStabilizer` | `vision/pipeline/stabilizer.py` | Vision→chess handoff gating (wall-time persistence + motion gate) |
 | `OccupancyColorModel` | `vision/models/occupancy_color_model.py` | ResNet18 wrapper, CUDA/CPU |
 
 **Coordinate systems:**
@@ -81,7 +81,7 @@ This document describes the full data flow, component responsibilities, coordina
 - Authoritative game state (`Board`, `Game`): move history, FEN, legal move generation
 - `board_to_occupancy()`: converts python-chess `Board` → 8×8 int array (0=empty, 1=white, 2=black)
 - `resolve_move_from_occupancy()`: finds the unique legal move consistent with observed vs. expected occupancy; supports exact matching and fuzzy matching (up to N noisy cells, confidence-weighted cost)
-- `StateStabilizer`: vote-and-hysteresis gate between raw classifications and accepted occupancy
+- `StateStabilizer`: persistence-and-motion gate between raw classifications and the accepted occupancy (see docs/pipeline_tuning.md)
 
 ---
 

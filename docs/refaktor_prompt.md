@@ -2,66 +2,74 @@
 
 ---
 
-## ÁLLAPOT — 2026-09-06 (olvasd el ELŐSZÖR, felülírja az alábbi szakaszok elavult számait)
+## ÁLLAPOT — 2026-09-06 este (olvasd el ELŐSZÖR, felülírja az alábbi szakaszok elavult számait)
 
-**A 7., 8. és 9. FELADAT KÉSZ.** Már csak a **10. szakasz** (pipeline átszervezés) van hátra.
+**MIND A NÉGY FELADAT KÉSZ (7., 8., 9., 10.).** A 10. szakasz részletes mérési
+dokumentuma: `docs/pipeline_tuning.md`. A küszöbök EGY helyen:
+`vision/app/config.py` (`STABILIZER_PARAMS` + `AppConfig`).
 
-### Ami elkészült
+### A 10. szakasz — mi készült el
 
-- **Modell:** MobileNetV3-Small, multi-task (3 osztályos szín-fej + 7 osztályos típus-fej),
-  `vision/models/square_net.py`. Betanítva 128 px-en, ImageNet-előtanított backbone-nal.
-- **ONNX Runtime inferencia:** `tools/export_onnx.py`, és az `OccupancyColorModel`
-  onnx/torch/auto backenddel. Az `img_size` és az architektúra a checkpointból jön,
-  a pipeline-nak nem kell tudnia róla.
-- **Adatgyűjtés:** `tools/collect_fen_dataset.py` (FEN-ből automatikus címkézés),
-  `tools/make_fen_positions.py` (Stockfish-alapú pozíciólista). 11 747 ROI, 6 session,
-  60% 1080p.
-- **Kamera:** 1280x720 -> **1920x1080** (MJPG kötelező, 1080p-n csak azzal van 30 fps).
-  Egy mező 72,5 -> 108,2 kamera-pixel.
+- **Stabilizer újraírva** (`vision/pipeline/stabilizer.py`): fali-idő alapú
+  perzisztencia (250 ms + ≥3 frame), **mozgás-kapu** (négyzetenkénti |diff| > 12
+  = mozgás; 200 ms nyugalom kell), a **≥2 mezős invariáns** kikényszerítve
+  (1 mezős eltérés SOHA nem kerül kiadásra), flicker-tolerancia változatlan.
+  Elhagyva: frame-throttle, 5 frame-es többségi szavazás, tábla-átlag
+  konfidencia-kapu, HOLD-időzítő, cooldown. A referencia az ELFOGADOTT állás
+  (a resolver expected_occ-ja), így "no_change" = a kamera azt látja, amit a
+  sakklogika hisz.
+- **Tracker** (`vision/pipeline/tracker.py`): minden frame feldolgozása (30 fps),
+  gördülő frissítés (+8 mező/frame → a 64 mező ~270 ms alatt frissül),
+  eseményvezérelt teljes átosztályozás feloldhatatlan eltérésnél, injektálható
+  óra (visszajátszáshoz), latencia-számvitel (`accept_info`), promóció a
+  típus-fejjel (a bábucseréig várva), bástyával kezdett sánc hosszabb
+  megerősítése, **orientáció-igazítás** init-kor és újradetektáláskor (a
+  bbox-rács átrendezésével; `raw_to_standard` érintetlen).
+- **Resolver** (`chess_logic/resolver.py`): inkrementális foglaltság (6,4 →
+  0,14 ms), `min_changed_cells=2`, a fuzzy célmezőt foglaltnak kell látni,
+  `prefix_ambiguities()` (Rf1 ↔ O-O), promóciós típus-tipp + `use_type_hint_for_moves`
+  kapcsoló (alapból ki). A sakkszabály-logika (python-chess) érintetlen.
+- **board_detect** 1971 → **165 ms** (1080p): `findGoodPoints` és `nonmax_sup`
+  vektorizálva, bitre azonos eredmény (tests/test_board_detect_equivalence.py).
+- **run_live**: `process_every_nth_captured_frame=1`; moves.csv új oszlopok:
+  `latency_from_state_ms`, `latency_from_static_ms`; a robot lépése után a
+  tracker a backend aktuális FEN-jéről indul újra (eddig az alapállásról →
+  init-too-far).
+- **Eszközök**: `tools/measure_pipeline_noise.py` (zaj/konfidencia/mozgás
+  mérése), `tools/replay_frames.py` (offline visszajátszás valódi modellel,
+  determinisztikus órával), `tools/record_camera.py` (valódi játék felvétele
+  offline méréshez). Tesztek: 126 (stabilizer, tracker-állapotgép
+  szintetikus képekkel, resolver-ekvivalencia, orientáció, detektor-ekvivalencia,
+  run_live).
 
-### Frissült mérések (a 2. szakasz régi torch-számai ÉRVÉNYTELENEK)
+### Mért eredmények
 
-| Komponens | régi (torch, ResNet18) | most (ONNX int8_static, ResNet18) |
-|---|---|---|
-| `classifier_full` (64 mező) | 300–350 ms | **64 ms** |
-| `classifier_partial` (20 mező) | 40–55 ms | **21 ms** |
+| Mérés | Eredmény |
+|---|---|
+| Statikus tábla, élő kamera, 333 frame | 0/64 villódzó mező, 0 címkeváltás → a szavazópuffer redundáns volt |
+| Mozgás-alapvonal statikus táblán (mean\|diff\| / mező) | felvételen max 7,1; élő pipeline-ban max 7,4 → küszöb 12 |
+| 184 mentett kép (éles kivágási út) | igazítás után 47/11 776 hiba, ebből 41 rossz FEN/felrakás a gyűjtéskor; tényleges modellhiba ≤ 0,15 %, black recall 0,990 |
+| Hibás predikciók konfidenciája | p50 0,976 = a helyeseké → a konfidencia-kapu nem hibaszűrő; padló 0,40 |
+| Detektor orientáció | ugyanarra a jelenetre 18/184 újradetektálás rot270; élőben két detektálás 1 s-on belül rot0 vs rot90 → az igazítás mindkettőt megoldotta |
+| Képkockánkénti költség (részleges út) | **~15 ms** benchmarkon, **19,7 ms p50** élőben (30 fps-hez elég; félhomályban a kamera maga esik ~15 fps-re a hosszú exponálás miatt) |
+| Visszajátszás (142 lépés, 6 session, szintetikus kéz) | **0 hamis elfogadás**, 125 helyes; a 17 beragadásból 15 a `sotetben_1080` hibás FEN-címkéinek műterméke, 2 a 0,60-as padló volt (0,40-nel: 38/38 a jó fényű sessionben, 0 beragadás) |
+| Latencia a végállapot első frame-jétől (szimulált 30 fps) | **p50 367 ms, p95 567 ms** (a kéz eltűnésétől ≈ 300 ms: 200 ms nyugalom + 100 ms mozgás-referencia + frame-granularitás) |
+| Élő statikus futás 30 s | 445/445 frame `no_change`, 0 elfogadás, 0 újradetektálás, init elsőre (rot90 igazítással) |
 
-Az új MobileNetV3 modellel ez tovább javul (ORT batch 64 @128 px: ~21 ms, @100 px: ~16 ms).
-**A klasszifikátor tehát MÁR NEM a szűk keresztmetszet.**
+### Ami NEM mérhető offline, és mit kell tenni
 
-### Hol van valójában a latencia — ez a 10. szakasz kiindulópontja
+A **lebegtetett kéz** (a bábu a célmező felett, még nem letéve) elleni védelem
+most a mozgás-kapu + 250 ms ablak (régen ~600 ms ablak, mozgás-kapu nélkül).
+Ezt valódi játékon kell mérni: `python -m tools.record_camera --out rec/j1`,
+majd `python -m tools.replay_frames video rec/j1 --moves "..."`. Ha hamis
+elfogadás jelenik meg, először `min_static_s`-t emeld (0,20 → 0,35), aztán
+`min_stable_s`-t — mindkettő `vision/app/config.py`-ban.
 
-A ~900 ms-os ideális elfogadási latenciából (10 fps feldolgozás, `stable_frames=4`,
-`buffer_size=5`, `emit_cooldown=200 ms`):
-
-- **196 ms a tényleges számítás**
-- **704 ms puszta várakozás a frame-ekre**
-
-A latencia képlete: *(hány frame kell, mire elhiszem) × (mennyi idő alatt jön egy frame)*.
-Jelenleg 7 frame kell (3 a szavazat átfordulásához + 4 perzisztencia), egyenként 100 ms.
-A nyereség tehát a frame-számból és a frame-rátából jön, nem a modellből.
-
-Becslés: `every_nth` 3->1 (30 fps) ~430 ms; + `stable_frames` 4->2, `buffer` 5->3 ~330 ms;
-+ `cooldown` 200->100 ms ~230 ms. A partial út teljes költsége ~28 ms, tehát 30 fps-nél
-(33 ms keret) még elfér — de **tartalék nélkül**, ezért nehezebb modellt NE válassz.
-
-### Új ismeret: az orientáció-feltevés törékeny
-
-A `board_detector` rácsának orientációja **nem garantált** — ugyanaz a fizikai tábla
-más rácsállást is adhat két detektálás között. A gyűjtőben ezt megoldottuk
-(`ModelChecker.apply_symmetry`, automatikus igazítás, `tests/test_auto_orient.py`).
-
-**Az éles pipeline-ban ezt NE írd át** — ott a `raw_to_standard` leképezés fix, és a
-python-chess irányítás erre épül. De **legyen tudatos**, hogy ugyanez a törékenység
-élesben is jelentkezhet (elmozdított tábla, újradetektálás beragadás után), és ha
-biztonságosan kezelhető, az érték.
-
-### Fenntartás a modell számaihoz
-
-A val halmazon mért 100%-os `black` recall **felső becslés**: a `--split-mode position`
-egy állás fotóit ugyanabba a splitbe teszi, de két szomszédos állás csak EGY lépésben
-tér el, tehát a val-ban lévő képek 62/64 mezője near-duplicate a train-beliekkel.
-A valódi mérce az éles futás — ne a val-számra hangolj.
+**Adatminőség**: a `sotetben_1080` session 15 fotóján a FEN két mezőben eltér a
+fizikai táblától (r0c5 ↔ r0c6), a `maxra_allitott_lampaval_es_kislampa_1080`
+sessionben r0c0 11 fotón, a `maxra_allitott_lampaval_720` egy fotóján két bábu
+egy oszloppal arrébb — ezek a tanítóhalmazban rossz címkék; a
+`measure_pipeline_noise frames` "ISMÉTLŐDŐ hibás mezők" listája mutatja őket.
 
 ---
 
