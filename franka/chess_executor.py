@@ -129,10 +129,28 @@ def _init_robot() -> None:
     print(f"[chess_executor] Robot kész. HTTP szerver: port {PORT}", flush=True)
 
 
-def _get_position() -> tuple[float, float, float]:
-    t = _tf_buf.lookup_transform(_BASE_FRAME, _EEF_FRAME, rclpy.time.Time())
-    tr = t.transform.translation
-    return (tr.x * 1000.0, tr.y * 1000.0, tr.z * 1000.0)
+def _get_position(timeout_s: float = 3.0) -> tuple[float, float, float]:
+    """Aktuális TCP pozíció mm-ben.
+
+    A TF buffer indulás után nem azonnal telik fel, és most már a legelső
+    mozgás ELŐTT is szükség van a pozícióra (_approach), ezért rövid ideig
+    várunk rá ahelyett, hogy egy hideg buffer megbuktassa az első parancsot.
+    """
+    deadline = time.monotonic() + timeout_s
+    last_err: Exception | None = None
+    while True:
+        try:
+            t = _tf_buf.lookup_transform(_BASE_FRAME, _EEF_FRAME, rclpy.time.Time())
+            tr = t.transform.translation
+            return (tr.x * 1000.0, tr.y * 1000.0, tr.z * 1000.0)
+        except Exception as e:
+            last_err = e
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"Nem olvasható a robot pozíciója ({_BASE_FRAME} → {_EEF_FRAME}) "
+                    f"{timeout_s:.0f} s alatt: {last_err}"
+                ) from last_err
+            time.sleep(0.05)
 
 
 # ── Gripper ──────────────────────────────────────────────────────────────────
@@ -161,6 +179,15 @@ def _gripper_grasp() -> None:
 
 
 # ── Mozgástervezés ────────────────────────────────────────────────────────────
+#
+# ALAPSZABÁLY: a MoveIt a Cartesian waypointokat CÉLPONTKÉNT értelmezi, az
+# aktuális pózból indulva. A waypoint-listába ezért SOHA nem szabad beletenni
+# azt a pontot, ahol a kar éppen áll — abból a trajektória első szegmense
+# ugrássá válik, amit a Franka nem folytonos indulási sebességként utasít el
+# (reflex, a kar bemerevedik), vagy a MoveIt már a start-toleranciánál eldob.
+
+_APPROACH_TOL_MM = 3.0   # ennél közelebb már ott vagyunk, nincs ráállás
+
 
 def _move_to(x_mm: float, y_mm: float, z_mm: float) -> None:
     """Egyszerű pose-alapú mozgás — kalibráló endpointhoz."""
@@ -187,31 +214,79 @@ def _assert_reached(expected_m: list[float], tolerance_mm: float = 5.0) -> None:
         )
 
 
-def _cartesian_move(waypoints: list[list[float]]) -> None:
-    """Cartesian pályán halad végig a waypontokon (méterben, orientáció: _DOWN_QUAT).
-    Ha a compute_cartesian_path nem elérhető, szekvenciális move_to_pose hívásokra esik vissza.
+def _run_cartesian(waypoints: list[list[float]]) -> None:
+    """Egyenes vonalú Cartesian pálya a MEGADOTT waypointokon (méterben).
+
+    A lista az aktuális pózból induló CÉLPONTOKAT tartalmazza. Az alapszabályt
+    itt, egyetlen helyen kényszerítjük ki: kiszűrjük azokat a waypointokat,
+    amik gyakorlatilag ott vannak, ahol a kar már áll. Ezek nem mozgások,
+    hanem nulla hosszú szegmensek — és épp ezekből lesz az indulási ugrás.
     """
-    try:
-        _moveit2.compute_cartesian_path(
-            waypoints,
-            quat_xyzw=_DOWN_QUAT,
-            max_step=0.01,
-        )
-        _moveit2.wait_until_executed()
-    except (AttributeError, TypeError):
-        for wp in waypoints:
-            _moveit2.move_to_pose(position=wp, quat_xyzw=_DOWN_QUAT)
+    if not waypoints:
+        return
+
+    prev_mm = _get_position()
+    targets: list[list[float]] = []
+    for wp in waypoints:
+        wp_mm = (wp[0] * 1000.0, wp[1] * 1000.0, wp[2] * 1000.0)
+        if math.dist(prev_mm, wp_mm) <= _APPROACH_TOL_MM:
+            continue
+        targets.append(list(wp))
+        prev_mm = wp_mm
+
+    if targets:
+        try:
+            _moveit2.compute_cartesian_path(
+                targets,
+                quat_xyzw=_DOWN_QUAT,
+                max_step=0.01,
+            )
             _moveit2.wait_until_executed()
+        except (AttributeError, TypeError):
+            for wp in targets:
+                _moveit2.move_to_pose(position=wp, quat_xyzw=_DOWN_QUAT)
+                _moveit2.wait_until_executed()
+
     _assert_reached(waypoints[-1])
 
 
+def _approach(x_mm: float, y_mm: float, z_m: float) -> None:
+    """Biztonságos ráállás egy pont fölé ISMERETLEN kiindulási pózból.
+
+    Ez az egyetlen hely, ahol a kar nem tudja, honnan indul. Ezért nem
+    szabad szabad-tér tervezésre bízni (az OMPL a bábuk közé is lemerülhet):
+    mindig felemelkedik Z_TRAVEL magasságra, ott halad vízszintesen, és csak
+    a cél XY fölött ereszkedik le. Ha már ott van, nem csinál semmit.
+    """
+    cx, cy, cz = _get_position()
+    z_mm = z_m * 1000.0
+    if (abs(cx - x_mm) <= _APPROACH_TOL_MM
+            and abs(cy - y_mm) <= _APPROACH_TOL_MM
+            and abs(cz - z_mm) <= _APPROACH_TOL_MM):
+        return
+
+    tx, ty = x_mm / 1000.0, y_mm / 1000.0
+    waypoints: list[list[float]] = []
+    if cz < Z_TRAVEL * 1000.0 - _APPROACH_TOL_MM:
+        # 1. függőleges emelkedés a JELENLEGI XY fölött — vízszintesen még
+        #    nem mozdulunk, amíg nem vagyunk a bábuk fölött
+        waypoints.append([cx / 1000.0, cy / 1000.0, Z_TRAVEL])
+    # 2. vízszintes áthelyezés a cél XY fölé, végig Z_TRAVEL-en vagy fölötte
+    waypoints.append([tx, ty, Z_TRAVEL])
+    # 3. leereszkedés a kért magasságra
+    waypoints.append([tx, ty, z_m])
+    _run_cartesian(waypoints)
+
+
 def _vertical_path(x_mm: float, y_mm: float, z_start: float, z_end: float) -> None:
-    """Egyenes fel/le mozgás rögzített XY pozícióban."""
-    waypoints = [
-        [x_mm / 1000.0, y_mm / 1000.0, z_start],
-        [x_mm / 1000.0, y_mm / 1000.0, z_end],
-    ]
-    _cartesian_move(waypoints)
+    """Egyenes fel/le mozgás rögzített XY pozícióban.
+
+    A z_start nem célpont, hanem elvárás: a hívó szerint itt áll a kar.
+    Ha mégsem — például a szekvencia legelején —, előbb biztonságosan
+    ráállunk, és csak utána indul az egyenes szakasz.
+    """
+    _approach(x_mm, y_mm, z_start)
+    _run_cartesian([[x_mm / 1000.0, y_mm / 1000.0, z_end]])
 
 
 def _arc_path(from_xy: tuple, to_xy: tuple) -> None:
@@ -219,11 +294,15 @@ def _arc_path(from_xy: tuple, to_xy: tuple) -> None:
     Sima parabolikus ív from_xy-tól to_xy-ig, mindkét végpont Z_LIFT magasságon.
     Az ív csúcsa Z_TRAVEL. A parabola paraméteres formája biztosítja, hogy
     t=0 és t=1-nél dz/dt=0, azaz a robot vízszintesen indul és érkezik Z_LIFT-en.
+
+    A t=0 pont maga a kiindulás, ezért NEM kerül be a waypointok közé.
     """
+    _approach(from_xy[0], from_xy[1], Z_LIFT)
+
     fx, fy = from_xy[0] / 1000.0, from_xy[1] / 1000.0
     tx, ty = to_xy[0] / 1000.0,   to_xy[1] / 1000.0
     waypoints = []
-    for i in range(ARC_WAYPOINTS + 1):
+    for i in range(1, ARC_WAYPOINTS + 1):
         t = i / ARC_WAYPOINTS
         x = fx + t * (tx - fx)
         y = fy + t * (ty - fy)
@@ -231,13 +310,14 @@ def _arc_path(from_xy: tuple, to_xy: tuple) -> None:
         # t=0 és t=1-nél: z = Z_LIFT;  t=0.5-nél: z = Z_TRAVEL
         z = Z_LIFT + 4.0 * (Z_TRAVEL - Z_LIFT) * t * (1.0 - t)
         waypoints.append([x, y, z])
-    _cartesian_move(waypoints)
+    _run_cartesian(waypoints)
 
 
 def _pick_and_place(from_xy: tuple, to_xy: tuple, piece: str = "P") -> None:
     fx, fy = from_xy
     tx, ty = to_xy
     z_pick = Z_PICK + PIECE_GRASP_HEIGHT.get(piece.upper(), 0.0)
+    _approach(fx, fy, Z_LIFT)                    # 0. fázis: biztonságos ráállás
     _vertical_path(fx, fy, Z_LIFT, z_pick)       # 1. fázis: leereszkedés a bábura
     _gripper_grasp()                              # 2. fázis: megfogás z_pick magasságon
     _vertical_path(fx, fy, z_pick, Z_LIFT)       # 3. fázis: felemelés
