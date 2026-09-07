@@ -102,6 +102,29 @@ cseréje), és meg kell mondani neki.
 | `chess_executor.py:44` | `_DOWN_QUAT = [1,0,0,0]` `quat_xyzw` sorrendben `x=1` — ellenőrizendő, hogy tényleg lefelé néző TCP-t jelent-e. |
 | `robot/calibration.json` | Jelenleg **nem létezik**. A `RobotExecutionService` emiatt indulásnál elszáll, a backend vision-only módba esik. |
 
+## 4b. Második tünet: a kalibrálás az első sarok után elhalt
+
+> „Elkezdtem a kalibrálást, az első sarok megvolt, majd a rendszer bedöglött,
+> vagy a robottal volt megint valami baj."
+
+A `robot/calibrate.py` maga nem mozgatja a kart: a kezelő kézzel odavezeti a sarok fölé,
+Entert nyom, és a script kiolvassa a `/position`-t (TF `fr3_link0 → fr3_hand_tcp`).
+Tehát a hiba nem a kalibráló logikában van.
+
+Legvalószínűbb ok (**ellenőrizendő, nem bizonyított**): a Franka kézi vezetéséhez a karon
+lévő guiding gombokat kell nyomni, ami átveszi a vezérlést. Ha közben az FCI vezérlőhurok
+aktív, a robot hibát dob, és a `franka_hardware` node gyakran leáll — ezzel viszont a
+MoveIt és a TF is elmegy, így a **második** sarok `/position` hívása már nem tud mit
+kiolvasni. Ez pontosan „az első sarok megvolt, aztán bedöglött" mintázat.
+
+Ellenőrzés: kalibrálás közben nézd meg, él-e még a `franka_hardware` node és jön-e a
+`/joint_states`. Ha a guiding mód valóban leüti a stacket, a kalibrálást vagy guiding
+módban futó, de FCI nélküli állapotban kell csinálni, vagy a kart a `/move` endpointtal
+kell pozicionálni kézi vezetés helyett.
+
+(A `_get_position` időközben kapott egy rövid újrapróbálkozást, így most legalább értelmes
+hibaüzenetet ad nyers TF-kivétel helyett — de ez nem javítja meg az okot.)
+
 ## 5. Amihez NEM szabad hozzányúlni
 
 - `vision/` — a képfeldolgozó pipeline le van mérve és validálva, ez a feladat nem érinti.
