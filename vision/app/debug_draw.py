@@ -42,6 +42,12 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
     motion = getattr(result, "motion", None) if result is not None else None
     reason = getattr(result, "reason", "") if result is not None else ""
 
+    # Kézi újradetektálás visszajelzése — enélkül a 'd' némán történne meg,
+    # és nem lehetne tudni, sikerült-e megtalálni a táblát az új kameraállásban.
+    manual_count = state.get("manual_redetect_count", 0)
+    manual_last = state.get("last_manual_redetect")
+    redetect_text = "-" if not manual_count else f"{manual_count}x | {manual_last or '?'}"
+
     return [
         f"Status: {status}",
         f"Tracker mode: {mode}",
@@ -56,7 +62,8 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
         f"Capture seq: {capture_seq} | Last processed seq: {state['last_processed_seq']} | Gap: {lag_frames}",
         f"Last error: {err_text}",
         f"Backend error: {backend_err_text}",
-        "Keys: q = quit, r = reset tracker",
+        f"Board redetect (d): {redetect_text}",
+        "Keys: q = quit, r = reset tracker, d = redetect board",
     ]
 
 

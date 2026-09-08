@@ -370,3 +370,98 @@ def test_accept_info_has_latency_fields(fake_detect):
     info = res[-1].accept_info
     assert info and info["candidate_since"] is not None and info["t_accept"] >= info["candidate_since"]
     assert info["stable_s"] >= P.min_stable_s and info["changed_cells"] == 2
+
+
+# ---------------------------------------------------------------------------
+# kézi újradetektálás ('d' billentyű)
+# ---------------------------------------------------------------------------
+#
+# A kamerát a rendszer indulása UTÁN is meg szokás mozgatni. Ilyenkor a
+# befagyasztott homográfia egy már nem létező kameraállásra vonatkozik, a
+# rendszer viszont elfogadottnak tekinti, és a régi rácsból dolgozik tovább.
+# Az 'r' (teljes reset) ezt megoldaná, de eldobná a lépéstörténetet is.
+
+
+def test_manual_redetect_keeps_the_game_and_reruns_detection(fake_detect):
+    tr, clock, scene, model, board = _init_tracker(fake_detect)
+    occ2, typ2, board2 = _after(board, "e2e4")
+    res = _run(tr, clock, scene, occ2, typ2, until_accept=True)
+    assert res[-1].board_changed
+    moves_before = list(tr.game.move_history)
+    accepted_before = tr.accepted_occ.copy()
+
+    tr.request_board_redetect()
+    res = _run(tr, clock, scene, occ2, typ2, n=3)
+
+    assert tr.manual_redetect_count == 1
+    assert tr.last_manual_redetect == "ok align=rot0"
+    # a lényeg: a parti nem indult újra
+    assert list(tr.game.move_history) == moves_before
+    assert np.array_equal(tr.accepted_occ, accepted_before)
+    assert all(not x.board_changed for x in res)
+
+    # és utána is működik a követés
+    occ3, typ3, _ = _after(board2, "e7e5")
+    res = _run(tr, clock, scene, occ3, typ3, until_accept=True)
+    assert res[-1].board_changed and res[-1].uci == "e7e5"
+
+
+def test_manual_redetect_realigns_a_rotated_grid(fake_detect):
+    """A kamera elmozdítása után a detektor rács-orientációja nem garantált."""
+    tr, clock, scene, model, board = _init_tracker(fake_detect)
+    occ2, typ2, board2 = _after(board, "d2d4")
+    _run(tr, clock, scene, occ2, typ2, until_accept=True)
+
+    fake_detect[:] = [_fake_det("rot90")]
+    tr.request_board_redetect()
+    _run(tr, clock, scene, occ2, typ2, n=3)
+
+    assert tr.last_manual_redetect == "ok align=rot90"
+    # az igazítás után a rács visszaáll a valódi orientációba
+    assert tr.det.bbox_warp == _bbox_grid()
+    occ3, typ3, _ = _after(board2, "d7d5")
+    res = _run(tr, clock, scene, occ3, typ3, until_accept=True)
+    assert res[-1].board_changed and res[-1].uci == "d7d5"
+
+
+def test_manual_redetect_failure_keeps_the_old_homography(monkeypatch, fake_detect):
+    """Ha az új kameraállásban nem található a tábla, a régi rács marad —
+    jobb egy elavult tábla, mint semmilyen. A felhasználó látja, hogy nem sikerült."""
+    tr, clock, scene, model, board = _init_tracker(fake_detect)
+    typ0 = _std_types_from_board(board)
+    bbox_before = [row[:] for row in tr.det.bbox_warp]
+
+    monkeypatch.setattr(tracker_mod, "detect_board_on_frame",
+                        lambda gray, *, cell, inner_pad_ratio: DetectionResult(ok=False))
+    tr.request_board_redetect()
+    _run(tr, clock, scene, tr.accepted_occ, typ0, n=2)
+
+    assert tr.manual_redetect_count == 1
+    assert tr.last_manual_redetect == "failed"
+    assert tr.det.bbox_warp == bbox_before
+    assert tr.initialized
+
+
+def test_manual_redetect_during_init_starts_the_detection_over(fake_detect):
+    """Init közben nincs mihez igazítani az orientációt, ezért a félkész
+    detektálást eldobjuk, és a következő képkockától elölről kezdjük."""
+    cfg = _cfg(start_fen=chess.STARTING_FEN)
+    clock, scene = Clock(), Scene()
+    tr = ChessVisionTracker(cfg, model=FakeModel(), clock=clock)
+    board = chess.Board()
+    occ = np.asarray(board_to_occupancy(board), np.int32)
+    typ = _std_types_from_board(board)
+
+    _run(tr, clock, scene, occ, typ, n=cfg.init_buffer_frames - 1)
+    assert not tr.initialized and tr.det is not None
+
+    tr.request_board_redetect()
+    res = _run(tr, clock, scene, occ, typ, n=1)
+
+    assert tr.manual_redetect_count == 1
+    assert tr.last_manual_redetect == "init-restart"
+    assert res[0].mode.startswith("init-buffer 1/")
+
+    # az init ettől még végigmegy
+    _run(tr, clock, scene, occ, typ, n=cfg.init_buffer_frames)
+    assert tr.initialized

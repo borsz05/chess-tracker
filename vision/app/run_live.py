@@ -341,6 +341,17 @@ class LiveProcessor:
         if sync_backend:
             self.sync_backend_new_game()
 
+    def request_redetect(self) -> None:
+        """Kézi tábla-újradetektálás ('d'), a játék állásának megtartásával.
+
+        Erre akkor van szükség, ha a kamerát a rendszer indulása UTÁN mozgattad
+        meg: a homográfia ilyenkor egy már nem létező kameraállásra vonatkozik,
+        a rendszer viszont elfogadottnak tekinti. Az 'r' (teljes reset) is
+        újradetektálna, de eldobná a lépéstörténetet is — ez nem.
+        """
+        with self._tracker_lock:
+            self.tracker.request_board_redetect()
+
     def _should_process_seq(self, seq: int) -> bool:
         with self._state_lock:
             last_processed_seq = self.last_processed_seq
@@ -551,6 +562,8 @@ class LiveProcessor:
                 initialized = tracker.initialized
                 move_count = len(tracker.game.move_history)
                 centers_img = tracker.det.centers_img if tracker.det is not None else None
+                manual_redetect_count = tracker.manual_redetect_count
+                last_manual_redetect = tracker.last_manual_redetect
 
             return {
                 "result": self.last_result,
@@ -568,6 +581,8 @@ class LiveProcessor:
                 "initialized": initialized,
                 "move_count": move_count,
                 "centers_img": centers_img,
+                "manual_redetect_count": manual_redetect_count,
+                "last_manual_redetect": last_manual_redetect,
             }
 
     def stop(self):
@@ -730,6 +745,10 @@ def main():
             if key == ord("r"):
                 logger.info("Tracker reset kérve.")
                 processor.request_reset(sync_backend=live_cfg.reset_backend_on_manual_tracker_reset)
+
+            if key == ord("d"):
+                logger.info("Tábla újradetektálása kérve (a lépéstörténet megmarad).")
+                processor.request_redetect()
     finally:
         processor.stop()
         camera.stop()

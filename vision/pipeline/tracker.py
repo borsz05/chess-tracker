@@ -219,6 +219,11 @@ class ChessVisionTracker:
         self.redetect_count = 0
         self.last_redetect_alignment: str | None = None
 
+        # kézi újradetektálás ('d' billentyű)
+        self._manual_redetect_requested: bool = False
+        self.manual_redetect_count: int = 0
+        self.last_manual_redetect: str | None = None
+
         # elfogadási politika állapota
         self._pending_promotion: tuple[str, float] | None = None
         self.last_accept_info: dict | None = None
@@ -430,6 +435,40 @@ class ChessVisionTracker:
         )
         return name
 
+    def request_board_redetect(self) -> None:
+        """Kézi újradetektálás kérése — a 'd' billentyű ezt hívja.
+
+        A kamera menet közbeni mozgatása után a befagyasztott homográfia már
+        nem a valódi táblát fedi, a rendszer viszont ettől még elfogadottnak
+        tekinti. Ez a kérés a következő feldolgozott képkockán újraoldja a
+        homográfiát — a játék állását és a lépéstörténetet érintetlenül hagyva,
+        tehát nem kell újraindítani a rendszert.
+
+        Szálbiztos: csak egy flaget billent, a munkát a feldolgozó szál végzi.
+        """
+        self._manual_redetect_requested = True
+
+    def _consume_manual_redetect(self, frame_bgr: np.ndarray) -> None:
+        """Végrehajtja a kért újradetektálást, ha van ilyen kérés."""
+        if not self._manual_redetect_requested:
+            return
+        self._manual_redetect_requested = False
+        self.manual_redetect_count += 1
+
+        if not self.initialized:
+            # Init közben nincs mihez igazítani az orientációt: eldobjuk a
+            # félkész detektálást, és a következő képkockától elölről kezdjük.
+            self._reset_init_buffers()
+            self.last_manual_redetect = "init-restart"
+            return
+
+        if self._redetect_board(frame_bgr, self.clock()):
+            self.last_manual_redetect = f"ok align={self.last_redetect_alignment}"
+        else:
+            # A régi homográfia marad érvényben — jobb egy elavult tábla, mint
+            # semmilyen. A felhasználó látja az overlay-en, hogy nem sikerült.
+            self.last_manual_redetect = "failed"
+
     def _should_redetect_board(self, decision: StabilizerDecision, now: float) -> bool:
         """True once the stabilizer has been unable to settle for long enough
         that the frozen homography is worth re-solving."""
@@ -594,6 +633,8 @@ class ChessVisionTracker:
         return int(v.argmax()) == TYPE_INDEX["pawn"] and float(v.max()) >= self.cfg.promotion_min_conf
 
     def process_frame(self, frame_bgr: np.ndarray) -> FrameProcessResult:
+        self._consume_manual_redetect(frame_bgr)
+
         if not self.initialized:
             return self.try_initialize_from_frame(frame_bgr)
 
