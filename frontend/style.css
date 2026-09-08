@@ -1,8 +1,16 @@
 /* ============================================================
-   SAKK ELEMZŐ — Dark Khaki / Sand Dune / Periwinkle paletta
+   SAKK ELEMZŐ — Krém / Mélyzöld / Terrakotta paletta (3. paletta)
+
+     #E3DCD2  krém        — világos mező, panelfelület
+     #013328  mélyzöld    — sötét mező, gombok, szöveg-akcentus
+     #CC8B65  terrakotta  — AKCENTUS: utolsó lépés, motor javaslata
+     #100C0D  közel-fekete— szöveg
+
+   Tipográfia: Montserrat végig (ez a chess.com betűtípusa is) — egy család,
+   súlyokkal tagolva: 800 a cím, 700 a kiemelés, 500-600 a szöveg.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
 
 html,
 body {
@@ -14,34 +22,45 @@ body {
 
 /* ── CSS VÁLTOZÓK ─────────────────────────────────────────── */
 :root {
-  /* EGY közös alap az egész oldalnak: a tábla és a panel mögött ugyanaz a
-     szín, így nincs látható törés a kettő között. A panel ennél VILÁGOSABB,
-     hogy önálló felületként olvasódjon — ez adja a mélységet árnyék nélkül. */
-  --bg-app:     #D3D2AB;
+  /* A háttér egy árnyalattal mélyebb a krémnél, hogy a világos mező és a
+     panel elváljon tőle — így nincs szükség árnyékra a mélységhez. */
+  --bg-app:     #D9D0C4;
   --bg-board:   var(--bg-app);
-  --panel-bg:   #E4E0C5;
-  --panel-bg-2: #DAD5B6;
-  --surface-1:  #CFCBA6;
-  --surface-2:  #BEBBA0;
-  --surface-3:  #B0AD90;
+  --panel-bg:   #EDE7DE;
+  --panel-bg-2: #E3DCD2;
+  --surface-1:  #D8CFC3;
+  --surface-2:  #C9BFB1;
+  --surface-3:  #B8ACA0;
 
-  --panel-border:      rgba(49, 55, 21, 0.18);
-  --panel-border-soft: rgba(49, 55, 21, 0.09);
+  --panel-border:      rgba(1, 51, 40, 0.20);
+  --panel-border-soft: rgba(1, 51, 40, 0.10);
   --line: 1px solid var(--panel-border);
 
-  --text-main:  #1E2209;
-  --text-soft:  #313715;
-  --text-dim:   #937666;
-  --text-label: #4A4E2A;
+  --text-main:  #100C0D;
+  --text-soft:  #2A2422;
+  --text-dim:   #7A6E66;
+  --text-label: #013328;
 
-  --accent:           #313715;
-  --accent-dark:      #1E2209;
-  --accent-mid:       #4A4E2A;
-  --accent-light:     #6A6E3A;
-  --accent-highlight: #A997DF;
+  --accent:           #013328;
+  --accent-dark:      #012019;
+  --accent-mid:       #024A3A;
+  --accent-light:     #0A6650;
 
-  --eval-white: #E2DBBE;
-  --eval-black: #1E2209;
+  /* Terrakotta: az utolsó lépés és a motor javaslata. */
+  --accent-warm:      #CC8B65;
+  --accent-warm-dark: #B0714C;
+  --accent-warm-soft: rgba(204, 139, 101, 0.22);
+
+  --eval-white: #EDE7DE;
+  --eval-black: #013328;
+
+  /* Az utolsó lépés két mezőjének színe (világos, illetve sötét mezőn). */
+  /* --highlight-light: #F5F682; */
+  --highlight-light: #DCB69D;
+
+  /* --highlight-dark:  #B9CA43; */
+  --highlight-dark:  #CC8B65;
+
 
   --radius-xl: 10px;
   --radius-lg:  8px;
@@ -55,66 +74,90 @@ body {
 
 /* ── ALAP ─────────────────────────────────────────────────── */
 body {
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: "Montserrat", system-ui, sans-serif;
   background: var(--bg-app);
   color: var(--text-main);
 }
 
-h1, h2, h3,
-.sidebar-title,
-.game-over-title {
-  font-family: "Literata", Georgia, serif;
-  font-weight: 700;
+h1, h2, h3 {
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
-.sidebar-subtitle,
-.status-section h2,
+/* A számok azonos szélességűek, hogy ne ugráljanak frissítéskor. */
+#eval-bar-score,
+.top-score,
 .move-no,
-.top-line-expand {
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  font-size: 0.70rem;
-  font-weight: 700;
-  font-family: "DM Sans", sans-serif;
+.status-move-no {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── ELRENDEZÉS ───────────────────────────────────────────── */
+/* ── ELRENDEZÉS ────────────────────────────────────────────────
+   A jobb oszlop FIX szélességű és a jobb szélhez van szegezve, a tábla a
+   megmaradt helyen ül középen. Így a panel tartalmának változása (motorvonal
+   hossza, megjelenő jelvény) SEMMILYEN úton nem tud vízszintesen elmozdítani
+   semmit — a korábbi „középre igazított egyetlen blokk" elrendezésnél ez
+   elvben lehetséges volt.
+
+   A függőleges igazítás (a cím teteje a tábla tetejével, a panel alja a
+   tábla aljával egy vonalban) a --board-height változóból jön, amit a
+   ui/board.js ír a tábla VALÓDI magasságából. */
 .app-container {
   display: flex;
+  align-items: center;
   height: 100vh;
   width: 100%;
   overflow: hidden;
 }
 
-/* ── BAL OLDAL — TÁBLA ────────────────────────────────────── */
-.board-container {
+.board-area {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-board);
-  position: relative;
-}
-
-.board-container::before {
-  display: none;
 }
 
 .board-with-eval {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 26px 0;
 }
 
-/* ── EVAL BAR ─────────────────────────────────────────────── */
+/* ── JOBB OSZLOP: LEBEGŐ CÍM + PANEL ──────────────────────── */
+.analysis-column {
+  flex: 0 0 480px;
+  width: 480px;
+  max-width: 480px;
+  min-width: 0;
+  height: var(--board-height, min(82vh, 78vw));
+  margin-right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* A cím az oldal háttere fölött ül, nincs kerete és háttere — nem a panel
+   része, csak fölötte lebeg. */
+.analysis-title {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 0 0;
+  text-align: center;
+  font-size: 2.1rem;
+  line-height: 1.1;
+  color: var(--accent-dark);
+}
+
+/* ── EVAL BAR — MŰSZERKÉNT ────────────────────────────────────
+   Az érték annál a végénél áll, amelyik fél éppen vezet: fehér előny ->
+   alul, fekete előny -> felül. */
 #eval-bar {
-  width: 24px;
+  width: 34px;
   background: var(--eval-black);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-right: 14px;
+  margin-right: 16px;
   position: relative;
   border: var(--line);
 }
@@ -134,39 +177,60 @@ h1, h2, h3,
   z-index: 2;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.66rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  font-family: "DM Sans", sans-serif;
   pointer-events: none;
 }
 
 #eval-bar-score.white-adv {
-  bottom: 4px;
+  bottom: 6px;
   top: auto;
   color: var(--accent-dark);
 }
 
 #eval-bar-score.black-adv {
-  top: 4px;
+  top: 6px;
   bottom: auto;
   color: var(--eval-white);
 }
 
-/* Lezárt parti: a sáv végig a győztes színe, az eredmény középen ül. */
+/* Lezárt parti: a sáv végig a győztes színe, az eredmény pedig ANNÁL a
+   végnél, amelyik nyert (döntetlennél középen). */
 #eval-bar-score.result {
-  top: 50%;
-  bottom: auto;
-  transform: translate(-50%, -50%);
-  font-size: 0.62rem;
+  font-size: 0.66rem;
   letter-spacing: 0;
   white-space: nowrap;
 }
 
-#eval-bar-score.result.on-white { color: var(--accent-dark); }
-#eval-bar-score.result.on-black { color: var(--eval-white); }
-#eval-bar-score.result.on-draw  { color: var(--accent-dark); }
+#eval-bar-score.result.on-white {
+  bottom: 6px;
+  top: auto;
+  color: var(--accent-dark);
+}
+
+#eval-bar-score.result.on-black {
+  top: 6px;
+  bottom: auto;
+  color: var(--eval-white);
+}
+
+#eval-bar-score.result.on-draw {
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  color: var(--accent-dark);
+}
 
 /* ── TÁBLA ────────────────────────────────────────────────── */
+/* FIGYELEM: ide NE kerüljön line-height — a chessboard.js a mezőkoordinátákat
+   (.notation-322f9) abszolút pozicionált szövegként rajzolja a mezőbe, és egy
+   örökölt `line-height: 0` nulla magasságúra lapítja őket, azaz elcsúsznak. */
+#board-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(82vh, 78vw);
+}
+
 #board {
   width: min(82vh, 78vw);
 }
@@ -178,22 +242,61 @@ h1, h2, h3,
 }
 
 .white-1e1d7 {
-  background-color: #F9F7F1 !important;
-  color: #A997DF !important;
+  background-color: #E3DCD2 !important;
+  color: #013328 !important;
 }
 
 .black-3c85d {
-  background-color: #3e5779 !important;
-  /*background-color: #A997DF !important;*/
-  color: #F9F7F1 !important;
+  background-color: #013328 !important;
+  color: #E3DCD2 !important;
+}
+
+/* Az utolsó lépés két mezője — a chessboard.js hivatalos mintája szerint
+   (examples #5004/#5005: osztály a `.square-<mező>` elemre). A világos és a
+   sötét mezőnek külön színe van; melyik mező milyen, azt a chessboard.js
+   saját osztálya (.white-1e1d7 / .black-3c85d) mondja meg, tehát a JS-nek
+   nem kell tudnia róla.
+   Az !important azért kell, mert a mezők alapszíne is !important. */
+#board .white-1e1d7.highlight-last-move {
+  background-color: var(--highlight-light) !important;
+}
+
+#board .black-3c85d.highlight-last-move {
+  background-color: var(--highlight-dark) !important;
+  /* A sötét mező koordinátája krém — a világos kiemelésen olvashatatlan. */
+  color: var(--text-main) !important;
+}
+
+/* A motor javaslata: halvány nyíl a tábla fölött. */
+#board-arrow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  overflow: visible;
+}
+
+#board-arrow .suggestion {
+  stroke: var(--accent-warm);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.62;
+}
+
+#board-arrow .suggestion-head {
+  fill: var(--accent-warm);
+  stroke: none;
+  opacity: 0.62;
 }
 
 /* ── JOBB OLDALI PANEL ────────────────────────────────────── */
 .sidebar {
-  flex: 0 0 480px;
-  max-width: 480px;
-  min-width: 380px;
-  margin: 14px 16px 14px 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
   border-radius: var(--radius-xl);
   background: var(--panel-bg);
   border: var(--line);
@@ -202,24 +305,42 @@ h1, h2, h3,
   overflow: hidden;
 }
 
-.sidebar-header {
+/* ── PARTI VÉGE — TELJES SZÉLESSÉGŰ SÁV A PANEL TETEJÉN ───── */
+#game-over-banner {
   flex: 0 0 auto;
-  padding: 18px 22px;
-  border-bottom: var(--line);
-  background: var(--panel-bg-2);
+  padding: 14px 22px;
+  background: var(--accent);
+  color: var(--eval-white);
+  border-bottom: 1px solid var(--accent-dark);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 
-.sidebar-title {
-  font-size: 1.55rem;
-  font-weight: 700;
-  color: var(--accent-dark);
+#game-over-banner[hidden] {
+  display: none;
+}
+
+.game-over-banner-title {
+  font-weight: 800;
+  font-size: 1.18rem;
   letter-spacing: 0.01em;
-  line-height: 1.15;
+  color: var(--accent-warm);
 }
 
-.sidebar-subtitle {
-  margin-top: 5px;
-  color: var(--text-dim);
+.game-over-banner-result {
+  font-weight: 600;
+  font-size: 1.0rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-over-banner-reason {
+  margin-left: auto;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  opacity: 0.75;
 }
 
 /* ── TOPLINES SZEKCIÓ ─────────────────────────────────────── */
@@ -256,14 +377,13 @@ h1, h2, h3,
 }
 
 .top-line:hover {
-  background: rgba(49, 55, 21, 0.07);
+  background: rgba(1, 51, 40, 0.07);
 }
 
 .top-score {
   min-width: 52px;
   text-align: center;
   font-weight: 700;
-  font-family: "DM Sans", sans-serif;
   border-radius: var(--radius-sm);
   padding: 4px 6px;
   font-size: 0.80rem !important;
@@ -273,13 +393,13 @@ h1, h2, h3,
 }
 
 .top-score.score-white-lead {
-  background: #F4F1DC;
+  background: #F5F0E8;
   color: var(--accent-dark);
 }
 
 .top-score.score-black-lead {
   background: var(--accent-dark);
-  color: #E2DBBE;
+  color: var(--eval-white);
 }
 
 .top-score.score-draw {
@@ -287,22 +407,20 @@ h1, h2, h3,
   color: var(--text-main);
 }
 
-/* ── VÉGEREDMÉNY-SOR (a motorvonalak helyén) ──────────────── */
-.top-line-result {
-  grid-template-columns: auto 1fr;
-  padding: 14px;
+/* A legjobb vonal hangsúlyosabb, az alternatívák halkabbak. */
+.top-line.top-line-best .top-move-line {
+  font-size: 0.94rem;
+  font-weight: 500;
+  color: var(--text-main);
 }
 
-.top-line-result:hover {
-  background: transparent;
-}
-
-.result-headline {
-  font-family: "Literata", Georgia, serif;
+.top-line.top-line-best .top-move-line .first-move {
+  color: var(--accent-warm-dark);
   font-weight: 700;
-  font-size: 1.05rem;
-  color: var(--accent-dark);
-  letter-spacing: 0.01em;
+}
+
+.top-line.top-line-alt {
+  opacity: 0.72;
 }
 
 .top-move-line {
@@ -310,7 +428,7 @@ h1, h2, h3,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
-  color: var(--text-main);
+  color: var(--text-soft);
   font-size: 0.86rem;
   line-height: 1.2;
 }
@@ -365,7 +483,7 @@ h1, h2, h3,
 }
 
 .move-row:nth-child(odd) {
-  background: rgba(49, 55, 21, 0.04);
+  background: rgba(1, 51, 40, 0.04);
 }
 
 .move-row:nth-child(even) {
@@ -373,13 +491,15 @@ h1, h2, h3,
 }
 
 .move-row:hover {
-  background: rgba(49, 55, 21, 0.09);
+  background: rgba(1, 51, 40, 0.09);
 }
 
 .move-no {
   color: var(--text-dim);
   text-align: right;
   margin-right: 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .move-white,
@@ -395,8 +515,8 @@ h1, h2, h3,
 }
 
 #moves-list li.last-move {
-  background: rgba(169, 151, 223, 0.15) !important;
-  border-left: 3px solid var(--accent-highlight);
+  background: var(--accent-warm-soft) !important;
+  border-left: 3px solid var(--accent-warm);
 }
 
 #moves-list li.last-move .move-white,
@@ -405,59 +525,86 @@ h1, h2, h3,
   font-weight: 700;
 }
 
-/* ── ÁLLAPOT SZEKCIÓ ──────────────────────────────────────── */
+/* ── ÁLLAPOT SZEKCIÓ ──────────────────────────────────────────
+   Alapból EGY sor: „33. lépés · Fehér következik". A részletek (sakk,
+   elemzés, kapcsolati hiba, fél-lépés számláló) csak akkor bomlanak ki,
+   ha van mit mondani. */
 .status-section {
   flex: 0 0 auto;
-  padding: 14px 16px;
+  padding: 12px 16px;
   background: var(--panel-bg-2);
   border-top: var(--line);
   display: flex;
-  flex-direction: column;
-  gap: 7px;
+  align-items: center;
+  gap: 14px;
 }
 
-.status-section h2 {
-  margin: 0 0 4px;
-  color: var(--text-label);
+.status-line {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.92rem;
+  color: var(--text-soft);
 }
 
-/* Csak hibánál látszik (status.js rejti el, ha él a kapcsolat). */
-#connection-status {
-  font-size: 0.84rem;
-  font-weight: 500;
-  color: #7A3A2A;
-  margin: 0;
+.status-move-no {
+  font-weight: 700;
+  color: var(--accent-dark);
 }
 
-/* Egyetlen kiemelt elem a szekcióban — a parti állapota. */
-.status-section #game-status {
+.status-sep {
+  color: var(--text-dim);
+}
+
+.status-side {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* A kibontott rész: csak baj esetén. */
+.status-note {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 13px;
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
-  font-weight: 600;
-  font-size: 0.92rem;
-  color: var(--text-main);
-  border: var(--line);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.80rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
 }
 
-/* A másodlagos infók csendes sorok, nem dobozok — három egymásra rakott
-   keretes doboz zsúfoltnak hatott. */
-#side-to-move,
-#move-counters {
-  font-size: 0.85rem;
+.status-note[hidden] {
+  display: none;
+}
+
+.status-note.note-alert {
+  background: var(--accent-warm-soft);
+  border-color: var(--accent-warm);
+  color: #8A4A28;
+}
+
+.status-note.note-info {
+  background: var(--surface-1);
+  border-color: var(--panel-border);
   color: var(--text-soft);
-  padding: 0 2px;
+}
+
+.status-note.note-error {
+  background: #F3D9CF;
+  border-color: #C06A4A;
+  color: #7A2E17;
 }
 
 /* ── GOMBOK ───────────────────────────────────────────────── */
 .buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
-  margin-top: 4px;
+  margin-left: auto;
 }
 
 button {
@@ -467,18 +614,17 @@ button {
   padding: 9px 18px;
   font-size: 0.83rem;
   font-weight: 700;
-  font-family: "DM Sans", sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  color: #E2DBBE;
-  transition: background 0.12s ease;
+  color: var(--eval-white);
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 button:hover {
-  background: var(--accent-highlight);
-  border-color: #8A7CC0;
-  color: #fff;
+  background: var(--accent-warm);
+  border-color: var(--accent-warm-dark);
+  color: var(--accent-dark);
 }
 
 button:active {
@@ -509,9 +655,6 @@ button:active {
   border-radius: var(--radius-md);
   font-size: 0.90rem;
   font-weight: 700;
-  font-family: "DM Sans", sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   text-align: center;
   border: 1px solid transparent;
   opacity: 0;
@@ -532,44 +675,20 @@ button:active {
 }
 
 .toast-success {
-  background: #354A35;
-  border-color: #466046;
-  color: #EAF2EA;
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: var(--eval-white);
 }
 
 .toast-error {
-  background: #5A1C1C;
-  border-color: #7A2C2C;
+  background: #7A2E17;
+  border-color: #A34424;
   color: #F5EAEA;
 }
 
-/* ── GAME OVER KÁRTYA ─────────────────────────────────────── */
-.top-lines-game-over {
-  gap: 8px;
-}
-
-.game-over-card {
-  background: var(--surface-1);
-  border-radius: var(--radius-md);
-  padding: 12px 14px;
-  border: var(--line);
-}
-
-.game-over-title {
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--accent-dark);
-  margin-bottom: 4px;
-}
-
-.game-over-result {
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.game-over-reason,
-.game-over-meta {
-  color: var(--text-dim);
-  font-size: 0.88rem;
-  margin-top: 2px;
+/* ── VÉGEREDMÉNY ─────────────────────────────────────────────
+   Lezárt partinál a motorvonalak szekciója eltűnik: az eredményt a panel
+   tetején álló teljes szélességű sáv mondja el. */
+.eval-section:has(.top-lines-game-over) {
+  display: none;
 }

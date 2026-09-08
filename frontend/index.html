@@ -7,25 +7,33 @@
   <link rel="icon" type="image/svg+xml" href="image12.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app-container">
-    <div class="board-container">
+    <div class="board-area">
       <div class="board-with-eval">
         <div id="eval-bar">
           <div id="eval-bar-fill"></div>
           <span id="eval-bar-score">0.0</span>
         </div>
-        <div id="board"></div>
+        <div id="board-wrap">
+          <div id="board"></div>
+          <svg id="board-arrow" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        </div>
       </div>
     </div>
 
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <div class="sidebar-title">Elemzés</div>
+    <div class="analysis-column">
+        <h1 class="analysis-title">Elemzés</h1>
+
+        <div class="sidebar">
+        <div id="game-over-banner" hidden>
+          <span class="game-over-banner-title"></span>
+          <span class="game-over-banner-result"></span>
+          <span class="game-over-banner-reason"></span>
         </div>
 
         <div class="eval-section">
@@ -37,17 +45,20 @@
         </div>
 
         <div class="status-section">
-            <h2>Állapot</h2>
-            <div id="connection-status">Kapcsolódás...</div>
-            <div id="game-status">Betöltés...</div>
-            <div id="side-to-move"></div>
-            <div id="move-counters"></div>
+            <div class="status-line">
+              <span class="status-move-no" id="status-move-no">1. lépés</span>
+              <span class="status-sep">·</span>
+              <span class="status-side" id="status-side">Fehér következik</span>
+              <span class="status-note note-alert" id="game-status" hidden></span>
+              <span class="status-note note-error" id="connection-status" hidden></span>
+            </div>
 
             <div class="buttons">
             <button id="new-game-btn">Új parti</button>
             <button id="copy-pgn-btn">PGN másolása</button>
             </div>
         </div>
+      </div>
     </div>
   </div>
   <div id="toast-container"></div>

@@ -1,9 +1,11 @@
 import { getEl, setText } from "../utils/dom.js";
 import {
   formatFinishReason,
-  formatResultLabel,
   isGameFinished,
+  resultBadgeText,
   sideToMoveLabel,
+  winnerHeadline,
+  decisiveResult,
 } from "../utils/game.js";
 
 /**
@@ -24,15 +26,57 @@ function connectionText(connectionState) {
   return "";
 }
 
+/**
+ * A jegyzet (a sor kibontott része) csak akkor jelenik meg, ha van mit
+ * mondani: sakk vagy futó elemzés. Normál menetben az egész
+ * állapot EGY sor: „33. lépés · Fehér következik".
+ */
+function statusNote(state, finished) {
+  const status = state?.status || {};
+
+  // Lezárt partinál a panel tetején álló sáv mindent elmond (eredmény +
+  // ok), a sorban nem ismételjük meg.
+  if (finished) return null;
+
+  if (status.is_check) {
+    return { text: "Sakk!", kind: "note-alert" };
+  }
+  if (state?.analysis_pending) {
+    return { text: "Elemzés…", kind: "note-info" };
+  }
+  return null;
+}
+
+/** Teljes szélességű sáv a panel tetején — a parti vége nem kis doboz. */
+function updateGameOverBanner(state, finished) {
+  const banner = getEl("game-over-banner");
+  if (!banner) return;
+
+  if (!finished) {
+    banner.hidden = true;
+    return;
+  }
+
+  const result = decisiveResult(state);
+  const title = banner.querySelector(".game-over-banner-title");
+  const resultEl = banner.querySelector(".game-over-banner-result");
+  const reasonEl = banner.querySelector(".game-over-banner-reason");
+
+  setText(title, winnerHeadline(result) || "Parti vége");
+  setText(resultEl, result ? resultBadgeText(result) : "");
+  setText(reasonEl, formatFinishReason(state?.status || {}));
+
+  banner.hidden = false;
+}
+
 export function updateStatusUI(state, connectionState) {
   const statusSection = document.querySelector(".status-section");
   const connectionDiv = getEl("connection-status");
-  const statusDiv = getEl("game-status");
-  const sideDiv = getEl("side-to-move");
-  const countersDiv = getEl("move-counters");
+  const noteDiv = getEl("game-status");
+  const moveNoDiv = getEl("status-move-no");
+  const sideDiv = getEl("status-side");
 
   const safeState = state || {};
-  const status = safeState.status || {};
   const finished = isGameFinished(safeState);
 
   const connText = connectionText(connectionState);
@@ -41,21 +85,26 @@ export function updateStatusUI(state, connectionState) {
     connectionDiv.hidden = connText === "";
   }
 
-  let text = "Folyamatban";
-  if (finished) {
-    text = `${formatResultLabel(safeState.result)} – ${formatFinishReason(status)}`;
-  } else if (status.is_check) {
-    text = "Sakk!";
-  } else if (safeState.analysis_pending) {
-    text = "Elemzés folyamatban...";
+  setText(moveNoDiv, `${safeState.fullmove_number ?? "-"}. lépés`);
+  setText(
+    sideDiv,
+    finished ? "Parti vége" : `${sideToMoveLabel(safeState.side_to_move)} következik`
+  );
+
+  const note = statusNote(safeState, finished);
+  if (noteDiv) {
+    if (note) {
+      setText(noteDiv, note.text);
+      noteDiv.classList.remove("note-alert", "note-info", "note-error");
+      noteDiv.classList.add(note.kind);
+      noteDiv.hidden = false;
+    } else {
+      setText(noteDiv, "");
+      noteDiv.hidden = true;
+    }
   }
 
-  setText(statusDiv, text);
-  setText(sideDiv, `Következik: ${sideToMoveLabel(safeState.side_to_move)}`);
-  setText(
-    countersDiv,
-    `Teljes lépés: ${safeState.fullmove_number ?? "-"}, fél-lépés számláló: ${safeState.halfmove_clock ?? "-"}`
-  );
+  updateGameOverBanner(safeState, finished);
 
   if (statusSection) {
     statusSection.classList.toggle("game-over", finished);

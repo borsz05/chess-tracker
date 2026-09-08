@@ -8,7 +8,7 @@ import {
   selectStatusSignature,
   selectTopLinesSignature,
 } from "./selectors.js";
-import { initBoard, syncBoardFromState } from "../ui/board.js";
+import { drawSuggestionArrow, initBoard, syncBoardFromState } from "../ui/board.js";
 import { updateEvalUI } from "../ui/eval.js";
 import { updateMovesUI } from "../ui/moves.js";
 import { updateStatusUI } from "../ui/status.js";
@@ -31,6 +31,9 @@ function renderSelective(previousState, nextState, opts = {}) {
     syncBoardFromState(previousState, nextState, {
       animateFromLast: opts.animateFromLast ?? true,
     });
+    // Az előző állásra vonatkozó javaslat elavult; a nyíl akkor jön vissza,
+    // amikor a motor válaszol az új állásra.
+    drawSuggestionArrow(null);
   }
 
   const prevTopSig = selectTopLinesSignature(previousState);
@@ -40,6 +43,7 @@ function renderSelective(previousState, nextState, opts = {}) {
     const topLinesView = buildTopLinesViewModel(nextState);
     updateEvalUI(topLinesView);
     updateTopLinesUI(topLinesView);
+    drawSuggestionArrow(topLinesView.finished ? null : topLinesView.bestMoveUci);
   }
 
   const prevMovesSig = selectMovesSignature(previousState);

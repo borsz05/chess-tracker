@@ -5,12 +5,7 @@ import {
   normalizeScore,
 } from "../utils/format.js";
 import { emptyElement } from "../utils/dom.js";
-import {
-  decisiveResult,
-  isGameFinished,
-  resultBadgeText,
-  winnerHeadline,
-} from "../utils/game.js";
+import { decisiveResult, isGameFinished } from "../utils/game.js";
 
 function splitLineForOverflow(span, fullText) {
   const tokens = (fullText || "").split(/\s+/).filter(Boolean);
@@ -66,6 +61,10 @@ export function buildTopLinesViewModel(state) {
       bestMove = main.line_san.split(" ")[0];
     }
 
+    // A tábla nyilához a motor javaslata UCI-ban kell.
+    const pvUci = Array.isArray(main.pv_uci) ? main.pv_uci : [];
+    const bestMoveUci = pvUci.length > 0 ? pvUci[0] : null;
+
     return {
       lines: orderedLines,
       sideToMove,
@@ -74,6 +73,7 @@ export function buildTopLinesViewModel(state) {
       evalLabel,
       evalValue,
       bestMove,
+      bestMoveUci,
       analysisPending: !!state?.analysis_pending,
       finished: isGameFinished(state),
       state,
@@ -88,10 +88,32 @@ export function buildTopLinesViewModel(state) {
     evalLabel: "0.0",
     evalValue: 0,
     bestMove: null,
+    bestMoveUci: null,
     analysisPending: !!state?.analysis_pending,
     finished: isGameFinished(state),
     state,
   };
+}
+
+/**
+ * A „12. Nf3 e5 ..." alakú sor első SAN-lépését külön spanbe teszi, hogy
+ * akcentusszínt kaphasson. A lépésszám (12. / 12...) a helyén marad.
+ */
+function emphasizeFirstMove(span, text) {
+  const match = /^(\d+\.(?:\.\.)?\s*)?(\S+)(\s[\s\S]*)?$/.exec(text || "");
+  if (!match) return;
+
+  const [, prefix = "", firstMove = "", rest = ""] = match;
+  span.textContent = "";
+
+  if (prefix) span.appendChild(document.createTextNode(prefix));
+
+  const strong = document.createElement("span");
+  strong.className = "first-move";
+  strong.textContent = firstMove;
+  span.appendChild(strong);
+
+  if (rest) span.appendChild(document.createTextNode(rest));
 }
 
 export function updateTopLinesUI(viewModel) {
@@ -100,29 +122,11 @@ export function updateTopLinesUI(viewModel) {
 
   emptyElement(container);
 
-  // Lezárt parti: a motorvonalak helyett az eredmény — ugyanabban a
-  // jelvény + szöveg formában, mint a centipawn-érték, de a győztes színével.
-  const result = viewModel?.finished ? decisiveResult(viewModel.state) : null;
-  if (result) {
+  // Lezárt parti: a motorvonalak helyén nincs semmi — az eredményt a panel
+  // tetején álló teljes szélességű sáv mondja el (ui/status.js), a sáv és a
+  // kis doboz együtt kétszer mondaná ugyanazt.
+  if (viewModel?.finished && decisiveResult(viewModel.state)) {
     container.classList.add("top-lines-game-over");
-
-    const row = document.createElement("div");
-    row.className = "top-line top-line-result";
-
-    const badge = document.createElement("span");
-    badge.className = "top-score";
-    badge.classList.add(
-      result === "1-0" ? "score-white-lead" : result === "0-1" ? "score-black-lead" : "score-draw"
-    );
-    badge.textContent = resultBadgeText(result);
-
-    const headline = document.createElement("span");
-    headline.className = "result-headline";
-    headline.textContent = winnerHeadline(result);
-
-    row.appendChild(badge);
-    row.appendChild(headline);
-    container.appendChild(row);
     return;
   }
 
@@ -136,7 +140,7 @@ export function updateTopLinesUI(viewModel) {
 
   container.classList.remove("top-lines-game-over");
 
-  lines.forEach((line) => {
+  lines.forEach((line, index) => {
     const { numeric: v, label: txt } = formatTopLineScore(line);
 
     const sanWithNumbers = formatLineWithMoveNumbers(
@@ -146,7 +150,7 @@ export function updateTopLinesUI(viewModel) {
     );
 
     const row = document.createElement("div");
-    row.className = "top-line";
+    row.className = index === 0 ? "top-line top-line-best" : "top-line top-line-alt";
 
     const scoreSpan = document.createElement("span");
     scoreSpan.className = "top-score";
@@ -166,5 +170,11 @@ export function updateTopLinesUI(viewModel) {
 
     const truncated = splitLineForOverflow(moveSpan, sanWithNumbers || "");
     moveSpan.textContent = truncated;
+
+    // A legjobb vonal első lépése akcentusszínnel — ugyanaz a lépés, amit a
+    // táblán a halvány nyíl mutat.
+    if (index === 0) {
+      emphasizeFirstMove(moveSpan, truncated);
+    }
   });
 }

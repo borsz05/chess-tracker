@@ -2,14 +2,18 @@ import { formatEvalBarScore } from "../utils/format.js";
 import { getEl, setText } from "../utils/dom.js";
 import { decisiveResult, resultBadgeText } from "../utils/game.js";
 
+/**
+ * Az eval-sáv MŰSZERKÉNT olvasódik: az érték mindig annál a végénél áll,
+ * amelyik fél vezet (fehér előny -> alul, fekete előny -> felül), a halvány
+ * középvonal pedig az egyenlőséget jelöli. Lezárt partinál ugyanez: az
+ * eredmény a GYŐZTES végénél, döntetlennél középen.
+ */
 export function updateEvalUI(viewModel) {
   const barFill = getEl("eval-bar-fill");
   const barScore = getEl("eval-bar-score");
 
   const result = viewModel?.finished ? decisiveResult(viewModel.state) : null;
 
-  // Lezárt parti: a sáv a győztes színével telik meg, és a centipawn-érték
-  // helyén az eredmény áll. Döntetlennél felezve marad.
   if (result) {
     if (barFill) {
       barFill.style.height = result === "1-0" ? "100%" : result === "0-1" ? "0%" : "50%";
@@ -19,7 +23,6 @@ export function updateEvalUI(viewModel) {
       barScore.dataset.bestMove = "";
       barScore.classList.remove("white-adv", "black-adv");
       barScore.classList.add("result");
-      // A felirat a sáv közepén ül, a kitöltéshez igazodó kontraszttal.
       barScore.classList.toggle("on-white", result === "1-0");
       barScore.classList.toggle("on-black", result === "0-1");
       barScore.classList.toggle("on-draw", result === "1/2-1/2");
