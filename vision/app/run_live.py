@@ -16,7 +16,7 @@ import cv2
 
 from vision.app.config import AppConfig
 from vision.app.debug_draw import build_overlay_lines, draw_lines, draw_square_class_dots
-from vision.pipeline.board_watchdog import BoardWatchdog
+from vision.pipeline.board_watchdog import BoardWatchdog, WatchdogParams
 from vision.pipeline.tracker import ChessVisionTracker
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,9 @@ class LiveConfig:
     # p50 22.6 ms (őrszem nélkül 23.1 ms), tehát nincs mérhető lassulás.
     # A küszöb és a többi paraméter indoklása: vision/pipeline/board_watchdog.py
     board_watchdog_enabled: bool = True
+    # 2.0 = magától is figyel; 0.0 = csak a 'd' billentyűre reagál. A munka
+    # mindkét esetben a háttérszálon történik.
+    board_watchdog_interval_s: float = 2.0
 
     backend_enabled: bool = True
     backend_origin: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
@@ -733,10 +736,12 @@ def main():
             tracker_getter=processor.current_tracker,
             frame_getter=lambda: camera.get_latest()[0],
             cfg=app_cfg,
+            params=WatchdogParams(interval_s=live_cfg.board_watchdog_interval_s),
         ).start()
         processor.watchdog = watchdog
-        logger.info("Tábla-őrszem elindult (%.1f mp-enként ellenőriz).",
-                    watchdog.params.interval_s)
+        logger.info("Tábla-őrszem elindult (%s).",
+                    "csak a 'd' billentyűre" if watchdog.manual_only
+                    else f"{watchdog.params.interval_s:.1f} mp-enként ellenőriz")
 
     window_name = "Chess Vision Live"
     if live_cfg.show_preview:

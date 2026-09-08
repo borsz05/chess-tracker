@@ -48,7 +48,9 @@ from vision.pipeline.orientation import IDENTITY
 @dataclass(frozen=True)
 class WatchdogParams:
     interval_s: float = 2.0
-    """Két ellenőrzés között eltelt idő."""
+    """Két ellenőrzés között eltelt idő. 0 vagy negatív = KÉZI MÓD: az őrszem
+    magától nem ellenőriz, csak a 'd' billentyűre. A munka ilyenkor is a
+    háttérszálon történik, tehát a fő ciklus akkor sem áll meg."""
 
     check_width_px: int = 672
     """Ide kicsinyítjük az ellenőrzéshez. 1920 -> 672 mellett a detektálás
@@ -142,9 +144,14 @@ class BoardWatchdog:
         """
         self._wake.set()
 
+    @property
+    def manual_only(self) -> bool:
+        return self.params.interval_s <= 0
+
     def _loop(self) -> None:
         while not self._stop.is_set():
-            woken = self._wake.wait(self.params.interval_s)
+            timeout = None if self.manual_only else self.params.interval_s
+            woken = self._wake.wait(timeout)
             if self._stop.is_set():
                 break
             forced = False

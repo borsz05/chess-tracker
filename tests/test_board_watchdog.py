@@ -293,3 +293,12 @@ def test_stats_report_what_the_watchdog_actually_did(watchdog):
     assert s["checks"] == 3 and s["skips"] == 1 and s["swaps"] == 1
     assert s["shift_max_px"] > 30 and s["shift_p50_px"] > 0
     assert "status" not in s, "a szöveges állapot nem való CSV-be"
+
+
+def test_zero_interval_means_manual_only():
+    """Ha valaki csak a 'd'-t akarja: az őrszem magától nem ellenőriz, de a
+    munka akkor is a háttérszálon marad."""
+    w = BoardWatchdog(lambda: None, lambda: None, None,
+                      params=WatchdogParams(interval_s=0.0))
+    assert w.manual_only
+    assert not BoardWatchdog(lambda: None, lambda: None, None).manual_only
