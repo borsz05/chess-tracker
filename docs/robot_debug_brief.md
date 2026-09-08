@@ -3,6 +3,27 @@
 Készült: 2026-09-07. Ez a dokumentum a **kiindulási tudás** a robotos szakaszhoz.
 A benne leírt elemzés már megtörtént — **ne derítsd ki újra**, csak ellenőrizd és javíts.
 
+## Állapot (2026-09-08, `robot-integracio` branch)
+
+Robot nélkül elvégezve — **ezeket ne csináld meg újra**:
+
+- **H1 javítva**: a Cartesian pályák már nem a kar aktuális pózából indulnak;
+  `_approach` biztonságos ráállással, az invariáns a `_run_cartesian`-ban van
+  kikényszerítve. 13 teszt: `tests/test_executor_waypoints.py`.
+- **H2 javítva**: `/recover` endpoint, futásidőben megkeresett hibafeloldó
+  action; végrehajtási hiba után magától lefut (a lépést nem ismétli meg).
+- **H3 javítva**: `/status` endpoint, strukturált hibák, a gripper action és a
+  MoveIt kimenetelének tényleges ellenőrzése. 11 további teszt.
+- **H4 javítva**: megszűnt a dupla spin; callback group, 4 executor szál,
+  `_wait_ready` a fix `time.sleep(1.5)` helyett.
+- Apróságok: `_CAL_PATH` több helyen keres, `run.sh` bemásolja a
+  `calibration.json`-t és a `move_group` tényleges indulására vár.
+
+**H5 (kernel, USB-C adapter, útvonalválasztás) nyitva** — host-szintű, csak a
+felhasználó tudja megcsinálni. A `tools/robot_preflight.sh` méri.
+
+A valódi robotos próba menete: `docs/robot_elso_proba.md`.
+
 ---
 
 ## 1. A tünet (a felhasználó szavaival)
