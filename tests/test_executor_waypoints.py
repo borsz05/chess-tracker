@@ -40,11 +40,17 @@ def _install_stubs() -> None:
 
     rclpy = mod("rclpy", init=lambda *a, **k: None)
     rclpy.time = mod("rclpy.time", Time=_Time)
-    mod("rclpy.action", ActionClient=object)
+    mod("rclpy.action", ActionClient=object,
+        get_action_names_and_types=lambda **k: [])
+    mod("rclpy.callback_groups", ReentrantCallbackGroup=object)
     mod("rclpy.executors", MultiThreadedExecutor=object)
     mod("rclpy.node", Node=object)
     mod("tf2_ros", Buffer=object, TransformListener=object)
     mod("pymoveit2", MoveIt2=object)
+
+    rosidl = mod("rosidl_runtime_py")
+    rosidl.utilities = mod("rosidl_runtime_py.utilities",
+                           get_interface=lambda t: None, get_message=lambda t: None)
 
     franka_msgs = mod("franka_msgs")
     action = mod("franka_msgs.action", Move=object, Grasp=object)
@@ -206,3 +212,141 @@ def test_grasp_height_matches_the_piece(ex):
         ex._pick_and_place((450.0, -175.0), (100.0, 175.0), piece)
         lowest = min(wp[2] for seg in fake.segments for wp in seg)
         assert lowest == pytest.approx(min(ex.Z_PICK + extra, ex.Z_PLACE)), piece
+
+
+# ── Hibafelszínre hozás ──────────────────────────────────────────────────────
+#
+# A robot eddig azért volt vakon hibakereshetetlen, mert minden hiba elveszett:
+# a gripper action válaszát eldobtuk, a MoveIt kimenetelét nem néztük, és a
+# HTTP réteg mindent egyetlen str(e)-vé lapított.
+
+
+class DoneFuture:
+    def __init__(self, value, done=True):
+        self._value, self._done = value, done
+
+    def done(self):
+        return self._done
+
+    def result(self):
+        return self._value
+
+
+class FakeGoalHandle:
+    def __init__(self, accepted=True, status=4, payload=None):
+        self.accepted = accepted
+        self._result = type("R", (), {"status": status, "result": payload})()
+
+    def get_result_async(self):
+        return DoneFuture(self._result)
+
+
+class FakeActionClient:
+    def __init__(self, handle, ready=True):
+        self._handle, self._ready = handle, ready
+
+    def server_is_ready(self):
+        return self._ready
+
+    def wait_for_server(self, timeout_sec=None):
+        return self._ready
+
+    def send_goal_async(self, goal):
+        return DoneFuture(self._handle)
+
+
+def test_wait_future_returns_the_value(ex):
+    assert ex._wait_future(DoneFuture("kesz"), 1.0, "teszt") == "kesz"
+
+
+def test_wait_future_times_out_instead_of_hanging(ex):
+    with pytest.raises(TimeoutError, match="teszt"):
+        ex._wait_future(DoneFuture(None, done=False), 0.05, "teszt")
+
+
+def test_send_action_raises_when_the_goal_is_rejected(ex):
+    client = FakeActionClient(FakeGoalHandle(accepted=False))
+    with pytest.raises(RuntimeError, match="elutasította"):
+        ex._send_action(client, object(), "gripper fogás")
+
+
+def test_send_action_raises_on_non_success_status(ex):
+    client = FakeActionClient(FakeGoalHandle(status=6))   # ABORTED
+    with pytest.raises(RuntimeError, match="status=6"):
+        ex._send_action(client, object(), "gripper fogás")
+
+
+def test_send_action_raises_when_the_payload_reports_failure(ex):
+    payload = type("P", (), {"success": False, "error": "nincs tárgy a megfogóban"})()
+    client = FakeActionClient(FakeGoalHandle(payload=payload))
+    with pytest.raises(RuntimeError, match="nincs tárgy"):
+        ex._send_action(client, object(), "gripper fogás")
+
+
+def test_send_action_accepts_a_successful_result(ex):
+    payload = type("P", (), {"success": True})()
+    client = FakeActionClient(FakeGoalHandle(payload=payload))
+    assert ex._send_action(client, object(), "gripper fogás") is payload
+
+
+def test_send_action_without_a_client_is_an_error_not_a_crash(ex):
+    with pytest.raises(RuntimeError, match="nincs kliens"):
+        ex._send_action(None, object(), "hibafeloldás")
+
+
+class FakeErrorFlags:
+    def __init__(self, **flags):
+        self._flags = flags
+        for k, v in flags.items():
+            setattr(self, k, v)
+
+    def get_fields_and_field_types(self):
+        return {k: "boolean" for k in self._flags}
+
+
+class FakeFrankaState:
+    def __init__(self, **fields):
+        self._fields = fields
+        for k, v in fields.items():
+            setattr(self, k, v)
+
+    def get_fields_and_field_types(self):
+        return {k: "" for k in self._fields}
+
+
+def test_franka_errors_finds_active_flags_without_hardcoded_names(ex):
+    ex._franka_state = FakeFrankaState(
+        robot_mode=2,
+        current_errors=FakeErrorFlags(
+            joint_motion_generator_velocity_discontinuity=True,
+            cartesian_reflex=False,
+        ),
+    )
+    assert ex._franka_errors() == [
+        "current_errors.joint_motion_generator_velocity_discontinuity"
+    ]
+
+
+def test_franka_errors_is_empty_without_a_state_message(ex):
+    ex._franka_state = None
+    assert ex._franka_errors() == []
+
+
+def test_record_error_carries_the_franka_flags(ex):
+    ex._franka_state = FakeFrankaState(
+        current_errors=FakeErrorFlags(cartesian_reflex=True))
+    info = ex._record_error("/execute", RuntimeError("nem ért célba"),
+                            descriptor_type="simple")
+    assert info["where"] == "/execute"
+    assert "nem ért célba" in info["error"]
+    assert info["descriptor_type"] == "simple"
+    assert info["franka_errors"] == ["current_errors.cartesian_reflex"]
+    assert ex._last_error is info
+
+
+def test_a_refused_execution_is_not_silently_accepted(ex):
+    """A pymoveit2 nem dob kivételt tervezési hibánál — csak nem csinál semmit."""
+    fake = _wire(ex, (0.30, 0.10, 0.35))
+    fake.wait_until_executed = lambda: False
+    with pytest.raises(RuntimeError, match="nem hajtódott végre"):
+        ex._run_cartesian([[0.45, -0.175, 0.20]])
