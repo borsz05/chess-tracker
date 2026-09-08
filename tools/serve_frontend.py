@@ -26,7 +26,21 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
+        # A no-store csak az INNENTŐL letöltött fájlokra hat. Ha a böngészőben
+        # még egy korábbi (pl. `python -m http.server`) kiszolgálás Last-Modified
+        # alapú bejegyzései ülnek, azok maradnak — és a hiba úgy néz ki, mintha
+        # a javítás meg sem történt volna (friss HTML + régi JS/CSS). Az oldal
+        # betöltésekor ezért kitakaríttatjuk az origó teljes gyorsítótárát; a
+        # már megkapott válaszokat ez nem érinti, a következő kérés úgyis a
+        # szerverhez megy.
+        if self._is_navigation:
+            self.send_header("Clear-Site-Data", '"cache"')
         super().end_headers()
+
+    @property
+    def _is_navigation(self) -> bool:
+        path = self.path.split("?", 1)[0]
+        return path.endswith("/") or path.endswith(".html")
 
     def send_header(self, keyword, value):
         # a szülő Last-Modified-ot is küldene, ami feltételes kérést enged
