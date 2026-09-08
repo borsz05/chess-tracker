@@ -141,3 +141,35 @@ Amit ez NEM mér: a valódi kéz (lebegtetés, félkész lépés). Ehhez:
    `tests/test_stabilizer.py`, `tests/test_tracker_state_machine.py`,
    `tests/test_resolver_incremental.py`, `tests/test_orientation.py`,
    `tests/test_board_detect_equivalence.py`.
+
+## 6. A/B: gördülő frissítés 8 vs 16 mező (2026-09-08, `recordings/jatszma2`)
+
+Felvétel: 1223 frame, 103 s valódi játszma (kézzel, 1080p, `record_camera`).
+Futtatás: `python -m tools.replay_frames video recordings/jatszma2 --rolling {8,16}`
+(a `--rolling` kapcsoló felülírja az `AppConfig.rolling_refresh_squares`-t).
+
+| | rolling=8 | rolling=16 |
+|---|---|---|
+| elfogadott lépés | 4 (e2e4, e7e5, g1f3, b8c6) | ugyanaz a 4 |
+| hamis elfogadás | 0 | 0 |
+| latencia a végállapottól | 401 / 593 / 339 / 1179 ms | 401 / 593 / **535** / 1179 ms |
+| `classifier_partial` p50 | 4,2 ms | 6,9 ms (+2,7) |
+
+**Következtetés: marad a 8.** A 16 semmit nem javított (egy lépésnél mértünk
+rosszabb latenciát is), cserébe képkockánként +2,7 ms. A hipotézis, hogy a
+kimaradt lépéseket a gördülő frissítés lassúsága okozza, MEGDŐLT.
+
+A tényleges ok a felvételen (t = 16,1–17,4 s, a `Nb1-c3` lépés): a megfigyelt
+állás a legalsó soron villódzott — a különbség-halmaz `c3:0->1` mellett
+képkockánként váltakozva `b1:1->0`, `c1:1->0`, `c1:1->2`, `b2:1->2`. Minden
+váltásnál újraindult a stabilizer jelöltje (`candidate_not_stable(0ms/1f)`),
+így a lépés nem tudott megérni; mire 16,95-nél stabilan a helyes két mezőre
+állt be, 17,31-nél már visszatért a kéz a következő lépéssel. Onnantól a
+játszma elszaladt a tracker állapota mellett (`too_many_changed(8–21)`), és
+17 újradetektálás sem hozta vissza — ezért maradt 4 elfogadott lépés 103 s-ból.
+
+Vagyis a szűk keresztmetszet az OSZTÁLYOZÓ CÍMKE-VILLÓDZÁSA a legközelebbi
+soron (perspektíva: a kamerához közeli bábuk átlógnak a szomszédos mezőre),
+nem a gördülő frissítés üteme. A következő kísérlet ezt célozza (mezőnkénti
+ROI-kivágás a legalsó két soron, illetve a jelölt-újraindítás toleránsabbá
+tétele 1 mezős eltérésre), nem a `rolling_refresh_squares`.

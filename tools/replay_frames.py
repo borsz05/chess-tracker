@@ -274,6 +274,8 @@ def _iter_recording(path: Path):
 
 def run_video(args: argparse.Namespace) -> None:
     cfg = AppConfig(start_fen=args.fen) if args.fen else AppConfig()
+    if args.rolling is not None:
+        cfg.rolling_refresh_squares = args.rolling
     clock = SimClock()
     tracker = ChessVisionTracker(cfg, clock=clock)
     expected = args.moves.split() if args.moves else []
@@ -322,6 +324,8 @@ def main() -> None:
     pv.add_argument("video", type=Path, help="record_camera.py könyvtár vagy videófájl")
     pv.add_argument("--fen", default=None)
     pv.add_argument("--moves", default=None, help="várt lépések UCI-ban, szóközzel")
+    pv.add_argument("--rolling", type=int, default=None,
+                    help="gördülő frissítés mezői/frame (AppConfig.rolling_refresh_squares felülírása)")
 
     args = p.parse_args()
     logging_setup()
