@@ -373,28 +373,26 @@ def test_accept_info_has_latency_fields(fake_detect):
 
 
 # ---------------------------------------------------------------------------
-# kézi újradetektálás ('d' billentyű)
+# háttér-őrszem által átadott detektálás
 # ---------------------------------------------------------------------------
 #
-# A kamerát a rendszer indulása UTÁN is meg szokás mozgatni. Ilyenkor a
-# befagyasztott homográfia egy már nem létező kameraállásra vonatkozik, a
-# rendszer viszont elfogadottnak tekinti, és a régi rácsból dolgozik tovább.
-# Az 'r' (teljes reset) ezt megoldaná, de eldobná a lépéstörténetet is.
+# A kamerát a rendszer indulása UTÁN is meg szokás mozgatni; a befagyasztott
+# homográfia onnantól egy nem létező kameraállásra vonatkozik. A detektálás
+# 340-580 ms, ezért a háttérszál végzi el, és ide már csak a kész eredmény
+# érkezik — a fő ciklusban ez referenciacsere.
 
 
-def test_manual_redetect_keeps_the_game_and_reruns_detection(fake_detect):
+def test_offered_detection_is_swapped_in_without_touching_the_game(fake_detect):
     tr, clock, scene, model, board = _init_tracker(fake_detect)
     occ2, typ2, board2 = _after(board, "e2e4")
-    res = _run(tr, clock, scene, occ2, typ2, until_accept=True)
-    assert res[-1].board_changed
+    assert _run(tr, clock, scene, occ2, typ2, until_accept=True)[-1].board_changed
     moves_before = list(tr.game.move_history)
     accepted_before = tr.accepted_occ.copy()
 
-    tr.request_board_redetect()
+    tr.offer_detection(_fake_det(), "rot0")
     res = _run(tr, clock, scene, occ2, typ2, n=3)
 
-    assert tr.manual_redetect_count == 1
-    assert tr.last_manual_redetect == "ok align=rot0"
+    assert tr.watchdog_swaps == 1 and tr.last_watchdog_swap == "rot0"
     # a lényeg: a parti nem indult újra
     assert list(tr.game.move_history) == moves_before
     assert np.array_equal(tr.accepted_occ, accepted_before)
@@ -406,62 +404,46 @@ def test_manual_redetect_keeps_the_game_and_reruns_detection(fake_detect):
     assert res[-1].board_changed and res[-1].uci == "e7e5"
 
 
-def test_manual_redetect_realigns_a_rotated_grid(fake_detect):
-    """A kamera elmozdítása után a detektor rács-orientációja nem garantált."""
+def test_offered_detection_forces_a_full_reclassify(fake_detect):
+    """A warp elmozdult: a gyorsítótárazott előző képkocka már nem ehhez a
+    rácshoz tartozik, ezért el kell dobni."""
+    tr, clock, scene, model, board = _init_tracker(fake_detect)
+    typ0 = _std_types_from_board(board)
+    _run(tr, clock, scene, tr.accepted_occ, typ0, n=5)
+
+    model.calls.clear()
+    tr.offer_detection(_fake_det(), "rot0")
+    _run(tr, clock, scene, tr.accepted_occ, typ0, n=1)
+    assert model.calls[0] == 64, "a csere után teljes átosztályozásnak kell jönnie"
+
+
+def test_align_offered_detection_rearranges_a_rotated_grid(fake_detect):
+    """A detektor rács-orientációja nem garantált — a háttérszál igazítja."""
     tr, clock, scene, model, board = _init_tracker(fake_detect)
     occ2, typ2, board2 = _after(board, "d2d4")
     _run(tr, clock, scene, occ2, typ2, until_accept=True)
 
-    fake_detect[:] = [_fake_det("rot90")]
-    tr.request_board_redetect()
-    _run(tr, clock, scene, occ2, typ2, n=3)
+    rotated = _fake_det("rot90")
+    frame = scene.frame(occ2, typ2)
+    alignment = tr.align_offered_detection(rotated, frame)
 
-    assert tr.last_manual_redetect == "ok align=rot90"
-    # az igazítás után a rács visszaáll a valódi orientációba
-    assert tr.det.bbox_warp == _bbox_grid()
+    assert alignment == "rot90"
+    assert rotated.bbox_warp == _bbox_grid(), "az igazítás helyben rendezi át a rácsot"
+
+    tr.offer_detection(rotated, alignment)
+    _run(tr, clock, scene, occ2, typ2, n=2)
     occ3, typ3, _ = _after(board2, "d7d5")
     res = _run(tr, clock, scene, occ3, typ3, until_accept=True)
     assert res[-1].board_changed and res[-1].uci == "d7d5"
 
 
-def test_manual_redetect_failure_keeps_the_old_homography(monkeypatch, fake_detect):
-    """Ha az új kameraállásban nem található a tábla, a régi rács marad —
-    jobb egy elavult tábla, mint semmilyen. A felhasználó látja, hogy nem sikerült."""
+def test_detection_snapshot_is_readable_for_the_watchdog(fake_detect):
     tr, clock, scene, model, board = _init_tracker(fake_detect)
-    typ0 = _std_types_from_board(board)
-    bbox_before = [row[:] for row in tr.det.bbox_warp]
-
-    monkeypatch.setattr(tracker_mod, "detect_board_on_frame",
-                        lambda gray, *, cell, inner_pad_ratio: DetectionResult(ok=False))
-    tr.request_board_redetect()
-    _run(tr, clock, scene, tr.accepted_occ, typ0, n=2)
-
-    assert tr.manual_redetect_count == 1
-    assert tr.last_manual_redetect == "failed"
-    assert tr.det.bbox_warp == bbox_before
-    assert tr.initialized
+    centers, accepted = tr.detection_snapshot()
+    assert centers == tr.det.centers_img
+    assert np.array_equal(accepted, tr.accepted_occ)
 
 
-def test_manual_redetect_during_init_starts_the_detection_over(fake_detect):
-    """Init közben nincs mihez igazítani az orientációt, ezért a félkész
-    detektálást eldobjuk, és a következő képkockától elölről kezdjük."""
-    cfg = _cfg(start_fen=chess.STARTING_FEN)
-    clock, scene = Clock(), Scene()
-    tr = ChessVisionTracker(cfg, model=FakeModel(), clock=clock)
-    board = chess.Board()
-    occ = np.asarray(board_to_occupancy(board), np.int32)
-    typ = _std_types_from_board(board)
-
-    _run(tr, clock, scene, occ, typ, n=cfg.init_buffer_frames - 1)
-    assert not tr.initialized and tr.det is not None
-
-    tr.request_board_redetect()
-    res = _run(tr, clock, scene, occ, typ, n=1)
-
-    assert tr.manual_redetect_count == 1
-    assert tr.last_manual_redetect == "init-restart"
-    assert res[0].mode.startswith("init-buffer 1/")
-
-    # az init ettől még végigmegy
-    _run(tr, clock, scene, occ, typ, n=cfg.init_buffer_frames)
-    assert tr.initialized
+def test_detection_snapshot_is_empty_before_any_detection():
+    tr = ChessVisionTracker(_cfg(), model=FakeModel(), clock=Clock())
+    assert tr.detection_snapshot() == (None, None)

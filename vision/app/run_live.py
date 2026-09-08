@@ -16,6 +16,7 @@ import cv2
 
 from vision.app.config import AppConfig
 from vision.app.debug_draw import build_overlay_lines, draw_lines, draw_square_class_dots
+from vision.pipeline.board_watchdog import BoardWatchdog
 from vision.pipeline.tracker import ChessVisionTracker
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,12 @@ class LiveConfig:
     print_accepts: bool = True
 
     auto_reset_on_init_detect_fail_streak: int = 60
+
+    # Háttér-őrszem: észreveszi, ha elmozdult a kamera vagy a tábla.
+    # Mérve ezen a gépen: kicsinyített ellenőrzés 2 mp-enként -> a fő ciklus
+    # p50 22.6 ms (őrszem nélkül 23.1 ms), tehát nincs mérhető lassulás.
+    # A küszöb és a többi paraméter indoklása: vision/pipeline/board_watchdog.py
+    board_watchdog_enabled: bool = True
 
     backend_enabled: bool = True
     backend_origin: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
@@ -341,16 +348,10 @@ class LiveProcessor:
         if sync_backend:
             self.sync_backend_new_game()
 
-    def request_redetect(self) -> None:
-        """Kézi tábla-újradetektálás ('d'), a játék állásának megtartásával.
-
-        Erre akkor van szükség, ha a kamerát a rendszer indulása UTÁN mozgattad
-        meg: a homográfia ilyenkor egy már nem létező kameraállásra vonatkozik,
-        a rendszer viszont elfogadottnak tekinti. Az 'r' (teljes reset) is
-        újradetektálna, de eldobná a lépéstörténetet is — ez nem.
-        """
+    def current_tracker(self):
+        """A háttér-őrszemnek: a MOSTANI tracker (reset után másik példány)."""
         with self._tracker_lock:
-            self.tracker.request_board_redetect()
+            return self.tracker
 
     def _should_process_seq(self, seq: int) -> bool:
         with self._state_lock:
@@ -562,8 +563,8 @@ class LiveProcessor:
                 initialized = tracker.initialized
                 move_count = len(tracker.game.move_history)
                 centers_img = tracker.det.centers_img if tracker.det is not None else None
-                manual_redetect_count = tracker.manual_redetect_count
-                last_manual_redetect = tracker.last_manual_redetect
+                watchdog_swaps = tracker.watchdog_swaps
+                last_watchdog_swap = tracker.last_watchdog_swap
 
             return {
                 "result": self.last_result,
@@ -581,8 +582,8 @@ class LiveProcessor:
                 "initialized": initialized,
                 "move_count": move_count,
                 "centers_img": centers_img,
-                "manual_redetect_count": manual_redetect_count,
-                "last_manual_redetect": last_manual_redetect,
+                "watchdog_swaps": watchdog_swaps,
+                "last_watchdog_swap": last_watchdog_swap,
             }
 
     def stop(self):
@@ -704,6 +705,19 @@ def main():
     if live_cfg.reset_backend_on_start:
         processor.sync_backend_new_game()
 
+    # A háttér-őrszem a kamera legfrissebb képkockájából dolgozik — nincs külön
+    # felvétel, és a nehéz munka (detektálás + orientáció-igazítás) sem a fő
+    # ciklusban történik, csak a kész eredmény kerül át.
+    watchdog = None
+    if live_cfg.board_watchdog_enabled:
+        watchdog = BoardWatchdog(
+            tracker_getter=processor.current_tracker,
+            frame_getter=lambda: camera.get_latest()[0],
+            cfg=app_cfg,
+        ).start()
+        logger.info("Tábla-őrszem elindult (%.1f mp-enként ellenőriz).",
+                    watchdog.params.interval_s)
+
     window_name = "Chess Vision Live"
     if live_cfg.show_preview:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -727,6 +741,7 @@ def main():
                     capture_seq=seq,
                     capture_fps=camera.get_capture_fps(),
                     every_nth=live_cfg.process_every_nth_captured_frame,
+                    watchdog=None if watchdog is None else watchdog.snapshot(),
                 )
                 draw_lines(frame, lines)
 
@@ -745,11 +760,9 @@ def main():
             if key == ord("r"):
                 logger.info("Tracker reset kérve.")
                 processor.request_reset(sync_backend=live_cfg.reset_backend_on_manual_tracker_reset)
-
-            if key == ord("d"):
-                logger.info("Tábla újradetektálása kérve (a lépéstörténet megmarad).")
-                processor.request_redetect()
     finally:
+        if watchdog is not None:
+            watchdog.stop()
         processor.stop()
         camera.stop()
         if live_cfg.show_preview:

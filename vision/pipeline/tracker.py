@@ -35,6 +35,7 @@ futtatni.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections import deque
 from contextlib import contextmanager
@@ -53,7 +54,7 @@ from vision.pipeline.batch_classifier import (
     classify_squares_batch,
     classify_warp_squares_batch,
 )
-from vision.pipeline.board_detector import DetectionResult, detect_board_on_frame
+from vision.pipeline.board_detector import CenterGrid, DetectionResult, detect_board_on_frame
 from vision.pipeline.orientation import IDENTITY, SYMMETRY_NAMES, apply_symmetry, choose_alignment, inverse_symmetry
 from vision.pipeline.profiler import PipelineProfiler
 from vision.pipeline.stabilizer import SETTLED_REASONS, StabilizerDecision
@@ -219,10 +220,11 @@ class ChessVisionTracker:
         self.redetect_count = 0
         self.last_redetect_alignment: str | None = None
 
-        # kézi újradetektálás ('d' billentyű)
-        self._manual_redetect_requested: bool = False
-        self.manual_redetect_count: int = 0
-        self.last_manual_redetect: str | None = None
+        # a háttér-őrszem által átadott, KÉSZ detektálás
+        self._offered_det: tuple[DetectionResult, str] | None = None
+        self._offer_lock = threading.Lock()
+        self.watchdog_swaps: int = 0
+        self.last_watchdog_swap: str | None = None
 
         # elfogadási politika állapota
         self._pending_promotion: tuple[str, float] | None = None
@@ -435,39 +437,52 @@ class ChessVisionTracker:
         )
         return name
 
-    def request_board_redetect(self) -> None:
-        """Kézi újradetektálás kérése — a 'd' billentyű ezt hívja.
+    def detection_snapshot(self) -> tuple[CenterGrid | None, np.ndarray | None]:
+        """Olvasható pillanatkép a háttér-őrszemnek: a mezőközepek képpontban
+        és az elfogadott állás. Init után a `det`-et már csak cseréljük, sosem
+        módosítjuk helyben, ezért ez zár nélkül is biztonságos."""
+        det = self.det
+        if det is None or det.centers_img is None:
+            return None, None
+        return det.centers_img, self.accepted_occ
 
-        A kamera menet közbeni mozgatása után a befagyasztott homográfia már
-        nem a valódi táblát fedi, a rendszer viszont ettől még elfogadottnak
-        tekinti. Ez a kérés a következő feldolgozott képkockán újraoldja a
-        homográfiát — a játék állását és a lépéstörténetet érintetlenül hagyva,
-        tehát nem kell újraindítani a rendszert.
+    def align_offered_detection(self, det: DetectionResult, frame_bgr: np.ndarray) -> str:
+        """Orientáció-igazítás egy háttérben készült detektáláshoz.
 
-        Szálbiztos: csak egy flaget billent, a munkát a feldolgozó szál végzi.
+        A detektor rács-orientációja nem garantált (184 mért képből 18-nál jött
+        vissza elforgatva), ezért az elfogadott álláshoz igazítjuk. A `det`-et
+        helyben rendezi át; a hívó szál a sajátját adja át, a fő szálé érintetlen.
         """
-        self._manual_redetect_requested = True
+        if self.accepted_occ is None or not self.cfg.redetect_align_orientation:
+            return IDENTITY
+        cls = classify_frame_batch(frame_bgr, det, self.cfg.warp_size,
+                                   self.occ_model, context=self.cfg.context)
+        return self._align(det, cls.labels, self.accepted_occ)
 
-    def _consume_manual_redetect(self, frame_bgr: np.ndarray) -> None:
-        """Végrehajtja a kért újradetektálást, ha van ilyen kérés."""
-        if not self._manual_redetect_requested:
+    def offer_detection(self, det: DetectionResult, alignment: str) -> None:
+        """A háttérszál átad egy KÉSZ, már orientáció-igazított detektálást.
+
+        A tábla-detektálás 340-580 ms, az orientáció-igazítás további ~50 ms —
+        ez a fő ciklusban egy fél másodperces kiesést jelentene. Ezért a munka
+        a háttérben történik, és ide már csak a kész eredmény érkezik.
+        """
+        with self._offer_lock:
+            self._offered_det = (det, alignment)
+
+    def _consume_offered_detection(self) -> None:
+        """Az átadott detektálás beemelése — a fő szálon ez mikroszekundum."""
+        with self._offer_lock:
+            offered, self._offered_det = self._offered_det, None
+        if offered is None:
             return
-        self._manual_redetect_requested = False
-        self.manual_redetect_count += 1
-
-        if not self.initialized:
-            # Init közben nincs mihez igazítani az orientációt: eldobjuk a
-            # félkész detektálást, és a következő képkockától elölről kezdjük.
-            self._reset_init_buffers()
-            self.last_manual_redetect = "init-restart"
-            return
-
-        if self._redetect_board(frame_bgr, self.clock()):
-            self.last_manual_redetect = f"ok align={self.last_redetect_alignment}"
-        else:
-            # A régi homográfia marad érvényben — jobb egy elavult tábla, mint
-            # semmilyen. A felhasználó látja az overlay-en, hogy nem sikerült.
-            self.last_manual_redetect = "failed"
+        det, alignment = offered
+        self.det = det
+        # A warp elmozdult: a gyorsítótárazott előző képkocka és címkéi már nem
+        # ehhez a rácshoz tartoznak — el kell dobni, hogy teljes átosztályozás legyen.
+        self._drop_frame_cache()
+        self.stabilizer.note_motion(self.clock())
+        self.watchdog_swaps += 1
+        self.last_watchdog_swap = alignment
 
     def _should_redetect_board(self, decision: StabilizerDecision, now: float) -> bool:
         """True once the stabilizer has been unable to settle for long enough
@@ -633,7 +648,7 @@ class ChessVisionTracker:
         return int(v.argmax()) == TYPE_INDEX["pawn"] and float(v.max()) >= self.cfg.promotion_min_conf
 
     def process_frame(self, frame_bgr: np.ndarray) -> FrameProcessResult:
-        self._consume_manual_redetect(frame_bgr)
+        self._consume_offered_detection()
 
         if not self.initialized:
             return self.try_initialize_from_frame(frame_bgr)

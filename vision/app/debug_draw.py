@@ -19,7 +19,7 @@ def draw_lines(frame, lines, x=12, y=28, line_h=24):
         cv2.putText(frame, text, (x, yy), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 0), 1, cv2.LINE_AA)
 
 
-def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
+def build_overlay_lines(state, capture_seq, capture_fps, every_nth, watchdog=None):
     result = state["result"]
     lag_frames = max(0, capture_seq - state["last_processed_seq"])
 
@@ -42,11 +42,17 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
     motion = getattr(result, "motion", None) if result is not None else None
     reason = getattr(result, "reason", "") if result is not None else ""
 
-    # Kézi újradetektálás visszajelzése — enélkül a 'd' némán történne meg,
-    # és nem lehetne tudni, sikerült-e megtalálni a táblát az új kameraállásban.
-    manual_count = state.get("manual_redetect_count", 0)
-    manual_last = state.get("last_manual_redetect")
-    redetect_text = "-" if not manual_count else f"{manual_count}x | {manual_last or '?'}"
+    # A háttér-őrszem visszajelzése: enélkül nem lehetne tudni, hogy figyel-e,
+    # és hogy egy újradetektálás megtörtént-e.
+    if watchdog is None:
+        watchdog_text = "kikapcsolva"
+    else:
+        shift = watchdog.get("last_shift_px")
+        watchdog_text = (f"{watchdog.get('checks', 0)} ellenőrzés, "
+                         f"{watchdog.get('swaps', 0)} újradetektálás | "
+                         f"{watchdog.get('status', '-')}")
+        if shift is not None:
+            watchdog_text += f" | eltérés {shift:.1f} px"
 
     return [
         f"Status: {status}",
@@ -62,8 +68,8 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth):
         f"Capture seq: {capture_seq} | Last processed seq: {state['last_processed_seq']} | Gap: {lag_frames}",
         f"Last error: {err_text}",
         f"Backend error: {backend_err_text}",
-        f"Board redetect (d): {redetect_text}",
-        "Keys: q = quit, r = reset tracker, d = redetect board",
+        f"Tábla-őrszem: {watchdog_text}",
+        "Keys: q = quit, r = reset tracker",
     ]
 
 
