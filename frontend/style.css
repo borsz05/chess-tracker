@@ -134,19 +134,6 @@ h1, h2, h3 {
   margin-right: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-/* A cím az oldal háttere fölött ül, nincs kerete és háttere — nem a panel
-   része, csak fölötte lebeg. */
-.analysis-title {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 2px 0 0;
-  text-align: center;
-  font-size: 2.1rem;
-  line-height: 1.1;
-  color: var(--accent-dark);
 }
 
 /* ── EVAL BAR — MŰSZERKÉNT ────────────────────────────────────
