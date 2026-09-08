@@ -107,32 +107,53 @@ class BoardWatchdog:
         self._clock = clock
 
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
 
-        # állapot az overlay-hez
+        # állapot az overlay-hez és az időzítési exporthoz
         self.checks = 0
+        self.skips = 0
         self.over_threshold_streak = 0
         self.swaps = 0
+        self.forced = 0
         self.last_shift_px: float | None = None
         self.last_status: str = "-"
+        self.shift_history: list[float] = []
 
     # ── életciklus ───────────────────────────────────────────────────────────
 
     def start(self) -> "BoardWatchdog":
         self._stop.clear()
+        self._wake.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         return self
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
 
+    def request_redetect(self) -> None:
+        """Kézi kérés ('d'): azonnal, feltétel nélkül újradetektál.
+
+        A munka így is a háttérszálon történik — a fő ciklus nem áll meg.
+        """
+        self._wake.set()
+
     def _loop(self) -> None:
-        while not self._stop.wait(self.params.interval_s):
+        while not self._stop.is_set():
+            woken = self._wake.wait(self.params.interval_s)
+            if self._stop.is_set():
+                break
+            forced = False
+            if woken:
+                self._wake.clear()
+                forced = True
+                self.forced += 1
             try:
-                self.last_status = self.check_once()
+                self.last_status = self.check_once(forced=forced)
             except Exception as e:  # egy őrszem sosem viheti magával a rendszert
                 self.last_status = f"hiba: {type(e).__name__}: {e}"
 
@@ -142,9 +163,17 @@ class BoardWatchdog:
         if tracker is None or not getattr(tracker, "initialized", False):
             # Init közben úgyis minden képkockán fut a detektálás.
             return "init"
-        last_motion = getattr(tracker.stabilizer, "last_motion_t", None)
+        stab = tracker.stabilizer
+        last_motion = getattr(stab, "last_motion_t", None)
         if last_motion is not None and (self._clock() - last_motion) < self.params.quiet_after_motion_s:
             return "mozgás"
+        # Egy csere note_motion-t vált ki, ami újraindítja a statikus ablakot.
+        # Ha épp egy lépés megerősítése fut, ez késleltetné az elfogadást —
+        # a néhány másodperces halasztás nem kerül semmibe.
+        cand = getattr(stab, "candidate", None)
+        ref = getattr(stab, "reference", None)
+        if cand is not None and ref is not None and cand != ref:
+            return "lépés megerősítése"
         return None
 
     def _detect_small(self, frame_bgr: np.ndarray) -> tuple[DetectionResult, float]:
@@ -155,19 +184,30 @@ class BoardWatchdog:
         cell = max(16, int(round(self._cfg.cell * scale)))
         return detect_board_on_frame(gray, cell=cell, inner_pad_ratio=self._cfg.inner_pad_ratio), scale
 
-    def check_once(self) -> str:
+    def check_once(self, forced: bool = False) -> str:
         tracker = self._tracker_getter()
-        skip = self._should_skip(tracker)
-        if skip:
-            return f"kihagyva ({skip})"
+        if tracker is None or not getattr(tracker, "initialized", False):
+            self.skips += 1
+            return "kihagyva (init)"
+        if not forced:
+            skip = self._should_skip(tracker)
+            if skip:
+                self.skips += 1
+                return f"kihagyva ({skip})"
 
         frame = self._frame_getter()
         if frame is None:
+            self.skips += 1
             return "kihagyva (nincs képkocka)"
 
         current_centers, _ = tracker.detection_snapshot()
         if current_centers is None:
+            self.skips += 1
             return "kihagyva (nincs rács)"
+
+        if forced:
+            self.over_threshold_streak = 0
+            return "kézi kérés: " + self._full_redetect(tracker, frame, float("nan"))
 
         det, scale = self._detect_small(frame)
         self.checks += 1
@@ -180,6 +220,7 @@ class BoardWatchdog:
         new = _flat_centers(det.centers_img) / scale
         shift = mean_nearest_shift(new, old)
         self.last_shift_px = shift
+        self.shift_history.append(shift)
         threshold = _square_spacing(old) * self.params.shift_threshold_ratio
 
         if shift < threshold:
@@ -212,7 +253,22 @@ class BoardWatchdog:
     def snapshot(self) -> dict:
         return {
             "checks": self.checks,
+            "skips": self.skips,
             "swaps": self.swaps,
+            "forced": self.forced,
             "last_shift_px": self.last_shift_px,
             "status": self.last_status,
         }
+
+    def stats(self) -> dict:
+        """Az időzítési exportnak — enélkül utólag nem lehet megmondani,
+        hogy az őrszem beleszólt-e egy futásba."""
+        h = self.shift_history
+        s = dict(self.snapshot())
+        s.pop("status", None)
+        if h:
+            ordered = sorted(h)
+            s["shift_p50_px"] = ordered[len(ordered) // 2]
+            s["shift_p95_px"] = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
+            s["shift_max_px"] = ordered[-1]
+        return s

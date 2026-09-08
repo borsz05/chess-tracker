@@ -276,6 +276,9 @@ class LiveProcessor:
         # Persistent across tracker resets — all moves from the whole session
         self._move_records: list[dict] = []
 
+        # A háttér-őrszem (a main köti be) — csak az időzítési exporthoz kell.
+        self.watchdog = None
+
     def _reset_runtime_state(self):
         self.last_result = None
         self.last_processed_seq = 0
@@ -612,6 +615,7 @@ class LiveProcessor:
             profiler.report()
 
         self._save_moves_csv(out_dir / "moves.csv")
+        self._save_watchdog_stats(out_dir / "watchdog.csv")
         self._print_move_summary(istats)
         logger.info("Időzítési adatok mentve: %s", out_dir.resolve())
 
@@ -627,6 +631,21 @@ class LiveProcessor:
             writer.writeheader()
             writer.writerows(self._move_records)
         logger.info("Lépés latenciák mentve: %s (%d lépés)", path, len(self._move_records))
+
+    def _save_watchdog_stats(self, path: Path) -> None:
+        """Az őrszem tevékenysége. Enélkül utólag nem lehet megmondani, hogy
+        beleszólt-e egy futásba — márpedig minden csere újraindítja a
+        stabilizátor statikus ablakát, tehát elvben késleltethet egy lépést."""
+        if self.watchdog is None:
+            return
+        stats = self.watchdog.stats()
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(stats))
+            writer.writeheader()
+            writer.writerow(stats)
+        logger.info("Tábla-őrszem: %d ellenőrzés, %d kihagyva, %d újradetektálás "
+                    "(ebből %d kézi)", stats["checks"], stats["skips"],
+                    stats["swaps"], stats["forced"])
 
     def _print_move_summary(self, istats: dict | None) -> None:
         import statistics as _statistics
@@ -715,6 +734,7 @@ def main():
             frame_getter=lambda: camera.get_latest()[0],
             cfg=app_cfg,
         ).start()
+        processor.watchdog = watchdog
         logger.info("Tábla-őrszem elindult (%.1f mp-enként ellenőriz).",
                     watchdog.params.interval_s)
 
@@ -760,6 +780,13 @@ def main():
             if key == ord("r"):
                 logger.info("Tracker reset kérve.")
                 processor.request_reset(sync_backend=live_cfg.reset_backend_on_manual_tracker_reset)
+
+            if key == ord("d"):
+                if watchdog is None:
+                    logger.warning("A tábla-őrszem ki van kapcsolva — a 'd' nem működik.")
+                else:
+                    logger.info("Tábla újradetektálása kérve (a lépéstörténet megmarad).")
+                    watchdog.request_redetect()
     finally:
         if watchdog is not None:
             watchdog.stop()

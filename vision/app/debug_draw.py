@@ -69,7 +69,7 @@ def build_overlay_lines(state, capture_seq, capture_fps, every_nth, watchdog=Non
         f"Last error: {err_text}",
         f"Backend error: {backend_err_text}",
         f"Tábla-őrszem: {watchdog_text}",
-        "Keys: q = quit, r = reset tracker",
+        "Keys: q = quit, r = reset tracker, d = redetect board now",
     ]
 
 

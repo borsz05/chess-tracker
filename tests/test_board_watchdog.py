@@ -211,3 +211,85 @@ def test_the_loop_never_dies_on_an_exception(watchdog):
     w._loop()          # nem dob
     w._stop.clear()
     w._tracker_getter = lambda: state["tracker"]
+
+
+# ── a lépés megerősítését nem szabad megzavarni ──────────────────────────────
+#
+# Minden csere note_motion-t vált ki, ami újraindítja a stabilizátor statikus
+# ablakát. Ha ez egy lépés megerősítése közben történik, az elfogadás
+# késleltetődik — ez az egyetlen mód, ahogy az őrszem lassíthatna.
+
+
+class MoveInFlightStabilizer:
+    def __init__(self, candidate, reference):
+        self.last_motion_t = None
+        self.candidate = candidate
+        self.reference = reference
+
+
+def test_no_swap_while_a_move_is_being_confirmed(watchdog):
+    w, state = watchdog
+    ref = [[0] * 8 for _ in range(8)]
+    cand = [row[:] for row in ref]
+    cand[3][4] = 1
+    state["tracker"].stabilizer = MoveInFlightStabilizer(cand, ref)
+    state["small"] = _small(dx=40.0)
+
+    assert "lépés megerősítése" in w.check_once()
+    assert state["tracker"].offered == []
+
+
+def test_swap_resumes_once_the_candidate_matches_the_reference(watchdog):
+    w, state = watchdog
+    ref = [[0] * 8 for _ in range(8)]
+    state["tracker"].stabilizer = MoveInFlightStabilizer([row[:] for row in ref], ref)
+    state["small"] = _small(dx=40.0)
+
+    w.check_once()
+    assert w.check_once().startswith("újradetektálva")
+
+
+# ── kézi kérés ('d') ─────────────────────────────────────────────────────────
+
+def test_a_manual_request_redetects_without_any_shift(watchdog):
+    """A 'd' feltétel nélkül újradetektál — de a munka így is a háttérszálon."""
+    w, state = watchdog
+    state["small"] = _small()                     # semmi nem mozdult
+    msg = w.check_once(forced=True)
+
+    assert msg.startswith("kézi kérés")
+    assert len(state["tracker"].offered) == 1
+    assert w.swaps == 1
+
+
+def test_a_manual_request_ignores_the_motion_guard(watchdog):
+    w, state = watchdog
+    state["tracker"].stabilizer.last_motion_t = state["now"]
+    assert w.check_once(forced=True).startswith("kézi kérés")
+    assert len(state["tracker"].offered) == 1
+
+
+def test_a_manual_request_still_needs_an_initialised_tracker(watchdog):
+    w, state = watchdog
+    state["tracker"].initialized = False
+    assert "init" in w.check_once(forced=True)
+    assert state["tracker"].offered == []
+
+
+# ── statisztika az időzítési exporthoz ───────────────────────────────────────
+
+def test_stats_report_what_the_watchdog_actually_did(watchdog):
+    w, state = watchdog
+    state["small"] = _small(dx=1.0)
+    w.check_once()
+    state["tracker"].initialized = False
+    w.check_once()
+    state["tracker"].initialized = True
+    state["small"] = _small(dx=40.0)
+    w.check_once()
+    w.check_once()
+
+    s = w.stats()
+    assert s["checks"] == 3 and s["skips"] == 1 and s["swaps"] == 1
+    assert s["shift_max_px"] > 30 and s["shift_p50_px"] > 0
+    assert "status" not in s, "a szöveges állapot nem való CSV-be"
