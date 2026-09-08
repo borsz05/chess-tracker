@@ -16,7 +16,15 @@ export function selectTopLines(state) {
 }
 
 export function selectTopLinesSignature(state) {
-  return JSON.stringify(selectTopLines(state));
+  // Az eredménynek is benne kell lennie: a partit lezáró lépésnél az állapot
+  // már tartalmazza a "0-1"-et, de a motorvonalak még az előző pozícióhoz
+  // tartoznak. Enélkül az eval-sáv és a vonalak csak akkor váltanának át a
+  // győzelmi nézetre, amikor a motor is válaszol — addig egy elavult
+  // centipawn-érték látszana egy már eldőlt partin.
+  return JSON.stringify({
+    lines: selectTopLines(state),
+    result: state?.result ?? null,
+  });
 }
 
 export function selectStatusSignature(state) {

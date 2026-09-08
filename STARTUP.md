@@ -56,7 +56,7 @@ A státusz overlay mutatja hogy inicializált-e már a tábla.
 
 ```bash
 cd /home/berci/Asztal/chess-tracker
-python -m http.server 8000 --directory frontend
+python -m tools.serve_frontend
 ```
 
 Utána nyisd meg böngészőben: **http://localhost:8000**
@@ -177,7 +177,7 @@ Megnyílik az előnézeti ablak. A pipeline:
 
 ```bash
 cd /home/berci/Asztal/chess-tracker
-python -m http.server 8000 --directory frontend
+python -m tools.serve_frontend
 ```
 
 Böngészőben: **http://localhost:8000**
@@ -225,7 +225,7 @@ kivéve hogy a kalibráláskor a robot stub módban fut
 | Kalibrálás | `python -m robot.calibrate` | B. és C. mód |
 | Vision (robot nélkül) | `python -m vision.app.run_live --no-robot` | A. mód |
 | Vision (robottal) | `python -m vision.app.run_live` | B. mód |
-| Frontend | `python -m http.server 8000 --directory frontend` | mindegyik |
+| Frontend | `python -m tools.serve_frontend` | mindegyik |
 
 ---
 
@@ -238,3 +238,4 @@ kivéve hogy a kalibráláskor a robot stub módban fut
 | `Robot executor nem elérhető` | nincs futó executor | indítsd el a `./run.sh`-t |
 | `detect-failed` az előnézeti ablakban | nem találja a tábla sarkait | helyezd a táblát a kamera látóterébe, A1 legyen bal felül |
 | `init-too-far` az előnézeti ablakban | a bábuk nincsenek kezdőpozícióban | állítsd fel a bábokat, vagy nyomj `r`-t |
+| a frontend a régi kódot mutatja | a böngésző gyorsítótárazta az ES-modulokat | `python -m tools.serve_frontend` (no-store fejlécekkel indul) — a `python -m http.server` erre nem alkalmas |
