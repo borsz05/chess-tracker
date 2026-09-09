@@ -366,7 +366,7 @@ The container uses `network_mode: "host"` — all ports are shared with the host
 | `wakeup_full_reclassify_s` | 0.5 | Min interval between on-demand full reclassifications |
 | `motion_ref_age_s` | 0.10 | Motion is measured against the previous frame and a frame this old (max of the two) |
 | `prefix_ambiguity_extra_s` | 1.0 | Extra confirmation when the resolved move is a prefix of another legal move (rook-first castling) |
-| `promotion_min_conf` / `promotion_wait_s` | 0.50 / 5.0 | Type-head threshold for the promotion piece; how long to wait for the pawn to be swapped |
+| `promotion_min_conf` / `promotion_wait_s` | 0.50 / 5.0 | Type-head threshold for the promotion piece, applied to the probability renormalised over the four possible promotion types (pawn and king are impossible, so their mass is dropped); how long to wait for the pawn to be swapped |
 | `use_type_hint_for_moves` | False | Future switch: use the type head beyond promotions (tie-break among fuzzy candidates) |
 | `redetect_after_stuck_s` / `redetect_min_interval_s` | 4.0 / 5.0 | Re-solve the homography when the stabilizer cannot settle |
 | `redetect_align_orientation` | True | After (re)detection, rotate the bbox grid to match the accepted position (the detector's grid orientation is not stable) |

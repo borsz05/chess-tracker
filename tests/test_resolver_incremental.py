@@ -169,10 +169,15 @@ def test_promotion_uses_type_head_hint():
     g, _, mode = resolve_move_from_occupancy(b, expected, conf, type_probs=_type_grid(at=(tr, tc), vec=vec))
     assert g.to_uci() == "a7a8n" and mode == "exact"
 
-    # bizonytalan tipp (min_conf alatt) -> marad a vezér
+    # bizonytalan tipp -> marad a vezér. A küszöb a NÉGY LEHETSÉGES promóciós
+    # típusra újranormált valószínűségre vonatkozik (a gyalog/király tömegét
+    # eldobjuk), ezért itt a négy jelölt közel egyforma.
     weak = np.zeros(7, np.float32)
-    weak[PROMOTION_TYPE_INDEX["r"]] = DEFAULT_PROMOTION_MIN_CONF - 0.05
-    weak[PROMOTION_TYPE_INDEX["q"]] = 0.30
+    weak[TYPE_INDEX["pawn"]] = 0.58
+    weak[PROMOTION_TYPE_INDEX["r"]] = 0.12
+    weak[PROMOTION_TYPE_INDEX["q"]] = 0.10
+    weak[PROMOTION_TYPE_INDEX["b"]] = 0.10
+    weak[PROMOTION_TYPE_INDEX["n"]] = 0.10
     g, _, _ = resolve_move_from_occupancy(b, expected, conf, type_probs=_type_grid(at=(tr, tc), vec=weak))
     assert g.to_uci() == "a7a8q"
 
@@ -190,6 +195,35 @@ def test_promotion_preference_ordering():
     assert promotion_preference(g, 0, 0) == ["b", "r", "q", "n"]
     assert promotion_preference(None, 0, 0) == ["q", "r", "b", "n"]
     assert promotion_preference(g, 3, 3) == ["q", "r", "b", "n"]     # ott nincs tipp (none=1.0)
+
+
+def test_promotion_ignores_pawn_and_king():
+    """Promocional a gyalog es a kiraly lehetetlen -> a masodik legbiztosabb dont.
+
+    A modell tipus-feje a legjobb mezokon is keveri a kiralyt/gyalogot a
+    tisztekkel; ha a legvalószínűbb tipp ezek egyike, a regi kod visszaesett az
+    alapertelmezett vezerre. Most a negy lehetseges tipusra ujranormalunk.
+    """
+    for blocker in ("pawn", "king"):
+        vec = np.zeros(7)
+        vec[TYPE_INDEX[blocker]] = 0.70          # a modell szerint ez a legvalószínűbb...
+        vec[PROMOTION_TYPE_INDEX["n"]] = 0.20    # ...de promocional csak ez a negy lehet
+        vec[PROMOTION_TYPE_INDEX["q"]] = 0.06
+        vec[PROMOTION_TYPE_INDEX["r"]] = 0.03
+        vec[PROMOTION_TYPE_INDEX["b"]] = 0.01
+        g = _type_grid(at=(0, 0), vec=vec)
+        assert promotion_preference(g, 0, 0) == ["n", "q", "r", "b"]
+
+
+def test_promotion_falls_back_when_the_four_are_equal():
+    """Ha a negy lehetseges tipus kozott nincs erdemi kulonbseg, marad a vezer."""
+    vec = np.zeros(7)
+    vec[TYPE_INDEX["pawn"]] = 0.60
+    for ch in ("q", "r", "b", "n"):
+        vec[PROMOTION_TYPE_INDEX[ch]] = 0.10     # ujranormalva 0.25 < DEFAULT_PROMOTION_MIN_CONF
+    g = _type_grid(at=(0, 0), vec=vec)
+    assert promotion_preference(g, 0, 0) == ["q", "r", "b", "n"]
+    assert DEFAULT_PROMOTION_MIN_CONF > 0.25
 
 
 def test_type_hint_switch_off_is_identical():

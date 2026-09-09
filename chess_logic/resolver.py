@@ -129,6 +129,8 @@ PIECE_TYPE_TO_TYPE_INDEX = {
     chess.PAWN: 1, chess.KNIGHT: 2, chess.BISHOP: 3, chess.ROOK: 4, chess.QUEEN: 5, chess.KING: 6,
 }
 # Ennél kisebb valószínűségű típus-tippet nem hiszünk el promóciónál: marad a vezér.
+# A küszöb a NÉGY LEHETSÉGES promóciós típusra újranormált valószínűségre
+# vonatkozik (lásd promotion_preference).
 DEFAULT_PROMOTION_MIN_CONF = 0.50
 
 TypeProbGrid = Any   # 8x8 rács, elemenként 7 hosszú valószínűség-vektor (lista vagy numpy), standard orientáció
@@ -156,17 +158,34 @@ def promotion_preference(
 ) -> list[str]:
     """
     A promóciós bábu sorrendje ('q','r','b','n' permutációja) a típus-fej
-    célmezőn mért kimenete alapján. Ha nincs tipp, vagy a legvalószínűbb
-    promóciós típus valószínűsége min_conf alatt van, a vezér az első (a
-    korábbi viselkedés). A visszaadott sorrend első eleme nyer, mert a négy
-    promóció foglaltság szerint megkülönböztethetetlen.
+    célmezőn mért kimenete alapján. A visszaadott sorrend első eleme nyer, mert
+    a négy promóció foglaltság szerint megkülönböztethetetlen.
+
+    GYALOG ÉS KIRÁLY KIZÁRVA: promóciónál ez a két típus lehetetlen (a gyalog
+    definíció szerint átváltozik, királlyá pedig nem lehet), ezért a rájuk eső
+    valószínűséget ELDOBJUK, és a maradék négyet ÚJRANORMÁLJUK. Így ha a modell
+    elsőként gyalogot vagy királyt mond, automatikusan a következő legbiztosabb
+    (már lehetséges) válasz dönt, nem esünk vissza az alapértelmezett vezérre.
+
+    A min_conf küszöb az újranormált értékre vonatkozik: ha a legjobb lehetséges
+    típus így sem éri el, marad az alapsorrend (vezér elöl) — ez a korábbi
+    viselkedés arra az esetre, amikor a négy jelölt között sincs érdemi
+    különbség (pl. mind ~0.25).
     """
     default = ["q", "r", "b", "n"]
     v = _type_probs_at(type_probs, to_row, to_col)
     if v is None:
         return default
-    scored = sorted(default, key=lambda ch: (-v[PROMOTION_TYPE_INDEX[ch]], default.index(ch)))
-    if v[PROMOTION_TYPE_INDEX[scored[0]]] < min_conf:
+
+    # Csak a négy lehetséges promóciós típus marad; a gyalog/király/üres tömeget
+    # eldobjuk, es a maradekot ujranormaljuk.
+    total = sum(v[PROMOTION_TYPE_INDEX[ch]] for ch in default)
+    if total <= 0.0:
+        return default
+    norm = {ch: v[PROMOTION_TYPE_INDEX[ch]] / total for ch in default}
+
+    scored = sorted(default, key=lambda ch: (-norm[ch], default.index(ch)))
+    if norm[scored[0]] < min_conf:
         return default
     return scored
 

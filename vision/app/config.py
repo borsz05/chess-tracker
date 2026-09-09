@@ -6,7 +6,7 @@ from pathlib import Path
 from vision.pipeline.stabilizer import StabilizerParams, StateStabilizer
 
 
-DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "mnv3_squares_128.pt"
+DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[1] / "models" / "weights" / "mnv3_squares_arnyekosakkal_128.pt"
 
 
 @dataclass
@@ -42,7 +42,11 @@ class AppConfig:
 
     # Bábutípus-fej: a promóciós bábu kiválasztásához (csak ott!). Ha a
     # célmezőn a legvalószínűbb promóciós típus valószínűsége ez alatt van,
-    # vezér az alapértelmezés. Ha a típus-fej a célmezőn még GYALOGOT lát
+    # vezér az alapértelmezés. A valószínűség a NÉGY LEHETSÉGES promóciós
+    # típusra (q/r/b/n) újranormált érték: a gyalog és a király promóciónál
+    # lehetetlen, ezért a rájuk eső tömeget eldobjuk — ha a modell elsőként
+    # ezek egyikét mondja, a következő legbiztosabb tisztet választjuk
+    # (chess_logic.resolver.promotion_preference). Ha a típus-fej a célmezőn még GYALOGOT lát
     # (a játékos még nem cserélte le), legfeljebb promotion_wait_s-ig várunk
     # a cserére, utána a resolver választása szerint fogadjuk el.
     promotion_min_conf: float = 0.50
