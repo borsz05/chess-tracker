@@ -29,6 +29,13 @@ Használat:
     python -m tools.make_fen_positions --per-side 20 --min-pieces 28
     python -m tools.make_fen_positions --seed 7 -o adag2.txt
 
+MÁSODIK MÓD — TISZT-DRILL a bábutípus-fejhez (Stockfish nélkül):
+    python -m tools.make_fen_positions --mode tiszt --shots 16 -o positions_tiszt.txt
+A játszma-alapú állásokban a király/vezér mindig ugyanazon a pár mezőn áll
+(mérve: king 9/64, queen 17/64 különböző mező), ezért a típus-fej a MEZŐT
+tanulja meg a bábu helyett. A tiszt-drill csúszó kétsoros mintával viszi végig
+a 16 tisztet a tábla minden során és oszlopán, világos és sötét mezőn is.
+
 Utána:
     python -m tools.collect_fen_dataset --session <fenyviszony> --fen-file positions.txt
 """
@@ -149,8 +156,192 @@ def best_window(positions: list[chess.Board], length: int, min_pieces: int) -> l
     return best
 
 
+# ---------------------------------------------------------------------------
+# TISZT-DRILL mod (--mode tiszt): a BABUTIPUS-FEJ celzott adata, Stockfish nelkul
+# ---------------------------------------------------------------------------
+#
+# Miert kell: a jatszma-alapu allasokban a kiraly es a vezer szinte mindig
+# ugyanazon a par mezon all (a mert adatban: king 9/64, queen 17/64, rook 17/64,
+# bishop 20/64, knight 19/64 kulonbozo mezo), a gyalog viszont 45/64-en. A
+# tipus-fej igy a MEZOT tanulja meg a babu helyett. Ez a mod nem jatszmakbol
+# mintavetelez, hanem SZANDEKOSAN vegigviszi a 16 tisztet a tabla minden soran
+# es oszlopan.
+#
+# Fizikai elrendezes (ezert ilyen egyszeru a minta):
+#   - ket sor: 8 feher tiszt az egyik soron, 8 fekete tiszt egy masikon,
+#     a ket sor mindig 4 sorra van egymastol (nem takarjak egymast a kameranak)
+#   - fotonkent MINDKET sor eggyel feljebb csuszik, es a babuk sorrendje
+#     ciklikusan eltolodik -> minden tiszt vegigjarja mind a 8 oszlopot es
+#     mind a 8 sort, vilagos es sotet mezon egyarant
+#   - a felrakas egy sorra ~8 babu athelyezese, a gyujto diagramja mutatja
+#
+INVENTORY = "KQRRBBNN"   # egy szinbol fizikailag ennyi tiszt van a keszletben
+
+
+def officer_positions(shots: int, order_shift: int = 3, row_shift: int = 1,
+                      black_gap: int = 4, mirror_black: bool = True) -> list[chess.Board]:
+    """`shots` darab tiszt-drill allas, csuszo ket-soros mintaval.
+
+    A ciklikus eltolasok (order_shift, row_shift) egymashoz kepest primek, igy
+    egy tiszt nem ragad ugyanabba az oszlopba: 8 foto alatt 8 kulonbozo
+    oszlopot es 8 kulonbozo sort jar be.
+    """
+    out: list[chess.Board] = []
+    n = len(INVENTORY)
+    for i in range(shots):
+        b = chess.Board(None)                      # ures tabla, nincs babu
+        w_rank = (i * row_shift) % 8
+        b_rank = (w_rank + black_gap) % 8
+        # A sor- es a sorrend-eltolasnak is paratlannak kell lennie a teljes
+        # sor-/oszlop-lefedettseghez, ez viszont azt jelenti, hogy egy adott
+        # tiszt mezoszine (f + rank paritasa) minden fotoban ugyanaz maradna
+        # (a kiraly vegig sotet, a vezer vegig vilagos mezon). A 8 fotonkenti
+        # +1 oszlop-offset toriti ezt: a masodik korben minden tiszt az
+        # ELLENTETES szinu mezokre kerul.
+        lap = i // 8
+        for f in range(8):
+            w_sym = INVENTORY[(f + i * order_shift + lap) % n]
+            # a fekete sor ellentetes iranyban forog, kulonben a K mindig a K
+            # ala kerulne (es ugyanazok a tipus-parok allnanak egymas mellett)
+            b_idx = (-(f + i * order_shift + lap) if mirror_black else (f + i * order_shift + lap + 4)) % n
+            b.set_piece_at(chess.square(f, w_rank), chess.Piece.from_symbol(w_sym))
+            b.set_piece_at(chess.square(f, b_rank), chess.Piece.from_symbol(INVENTORY[b_idx].lower()))
+        out.append(b)
+    return out
+
+
+def type_coverage(boards: list[chess.Board]) -> dict[str, set[int]]:
+    """tipusnev -> mely mezokon lattuk (a szin nem szamit, a tipus-fej szinvak)."""
+    cov: dict[str, set[int]] = {}
+    for b in boards:
+        for sq, piece in b.piece_map().items():
+            cov.setdefault(chess.piece_name(piece.piece_type), set()).add(sq)
+    return cov
+
+
+def write_officer_list(boards: list[chess.Board], out: Path) -> None:
+    lines = [
+        "# TISZT-DRILL FEN-lista (tools/make_fen_positions.py --mode tiszt)",
+        "# Cel: a babutipus-fej. Minden tiszt sok KULONBOZO mezon (vilagoson es",
+        "# soteten is) szerepeljen, ne a mezot tanulja meg a modell a tipus helyett.",
+        "#",
+        "# FELRAKAS: ket sor, soronkent 8 tiszt; a gyujto diagramja (jobb oldali",
+        "# ablak) mutatja pontosan. Fotonkent mindket sor eggyel feljebb csuszik es",
+        "# a babuk sorrendje eltolodik -> ~8-16 babut kell athelyezni allasonkent.",
+        "#",
+        "# FORGATAS: minden allas felrakasa utan forgasd el a babukat a sajat",
+        "# tengelyuk korul (kulonosen a HUSZART: nezzen elore/hatra/oldalra), es",
+        "# ket-harom allasonkent a TABLAT is forditsd meg 180 fokkal.",
+        "",
+    ]
+    lines += [b.fen() for b in boards]
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+
+# ---------------------------------------------------------------------------
+# ARNYEK-DRILL mod (--mode arnyek): URES mezok, amikre BABU vet arnyekot
+# ---------------------------------------------------------------------------
+#
+# A hiba, amire gyujtunk: oldalrol jovo fenynel egy nagy arnyek az ures mezon
+# "feher babunak" latszik. Az arnyekot a szomszedos BABUK vetik, tehat ures
+# tablaval nem lehet gyujteni ra. Ezert sakktabla-mintaban allunk fel: minden
+# masodik mezon all babu, es a KOZTUK levo ures mezok mindegyikenek 4 foglalt
+# ortogonalis szomszedja van -> barmelyik iranybol is jon a feny, esik ra arnyek.
+#
+# A gyujtot ehhez `--only-classes empty`-vel kell inditani: a babuk mezoi nem
+# kerulnek a datasetbe (nem akarjuk a babu-osztalyokat sakktabla-mintaval
+# hizlalni), csak az arnyekos ures mezok.
+#
+# Egy mintazat felrakasa 32 babu -> lassu, ezert KEVES allas van a listaban, es
+# egy allason belul sok fotot kell csinalni: a BABUK maradnak, a LAMPAT mozgatod.
+#
+# 1-4. allas: 32 babu az egyik szinu mezokon (a 32 ures mezo a masik szinu) —
+#             igy vilagos ES sotet ures mezorol is lesz arnyekos kepunk.
+# 5-6. allas: ritkabb, 4x4-es racs 16 tiszttel: kevesebb arnyekforras, viszont
+#             48 ures mezo fotonkent, es hosszu, tobb mezon atnyulo arnyekok.
+
+FULL_INVENTORY = "KQRRBBNNPPPPPPPP"      # egy szin 16 babuja (a valodi keszlet)
+OFFICERS = "KQRRBBNN"
+
+
+def _fill(squares: list[int], symbols: str, white: bool) -> list[tuple[int, chess.Piece]]:
+    return [(sq, chess.Piece.from_symbol(sym if white else sym.lower()))
+            for sq, sym in zip(squares, symbols)]
+
+
+def _checker_board(parity: int, offset: int, white_low: bool) -> chess.Board:
+    """32 babu az adott szinu (parity) mezokon; a masik 32 mezo URES.
+
+    `offset`: a keszlet ciklikus eltolasa -> mas babu all mas mezon, tehat mas
+    magassagu/formaju arnyek esik ugyanarra az ures mezore.
+    `white_low`: a feher babuk az also 4 soron (True) vagy a felsokon (False).
+    """
+    sqs = sorted(sq for sq in chess.SQUARES
+                 if (chess.square_file(sq) + chess.square_rank(sq)) % 2 == parity)
+    low, high = sqs[:16], sqs[16:]
+    inv = FULL_INVENTORY[offset:] + FULL_INVENTORY[:offset]
+    b = chess.Board(None)
+    for sq, piece in _fill(low, inv, white=white_low) + _fill(high, inv[::-1], white=not white_low):
+        b.set_piece_at(sq, piece)
+    return b
+
+
+def _lattice_board(file_off: int, rank_off: int) -> chess.Board:
+    """16 TISZT egy 4x4-es racson (minden masodik vonal es sor) — 48 ures mezo."""
+    sqs = [chess.square(f, r) for r in range(rank_off, 8, 2) for f in range(file_off, 8, 2)]
+    # A 16 mezore PONTOSAN a keszlet 8+8 tisztje kerul (nem ismetlodhet a
+    # kiraly/vezer, mert fizikailag egy van beloluk): also fel feher, felso fekete.
+    b = chess.Board(None)
+    for sq, piece in _fill(sqs[:8], OFFICERS, white=True) + _fill(sqs[8:], OFFICERS[::-1], white=False):
+        b.set_piece_at(sq, piece)
+    return b
+
+
+def shadow_positions() -> list[tuple[chess.Board, str]]:
+    """(allas, magyarazat) parok az arnyek-gyujteshez."""
+    return [
+        (_checker_board(0, 0, True),  "32 babu a SOTET mezokon (feher lent) -> a 32 VILAGOS mezo ures"),
+        (_checker_board(0, 5, False), "ugyanaz, mas babukiosztas es forditott szinek -> mas arnyekformak"),
+        (_checker_board(1, 0, True),  "32 babu a VILAGOS mezokon -> a 32 SOTET mezo ures"),
+        (_checker_board(1, 5, False), "ugyanaz, mas babukiosztas es forditott szinek"),
+        (_lattice_board(0, 0),        "16 tiszt 4x4-es racson (a1-rol indulva) -> 48 ures mezo, hosszu arnyekok"),
+        (_lattice_board(1, 1),        "ugyanaz egy mezovel eltolva (b2-rol indulva)"),
+    ]
+
+
+def write_shadow_list(items: list[tuple[chess.Board, str]], out: Path) -> None:
+    lines = [
+        "# ARNYEK-DRILL FEN-lista (tools/make_fen_positions.py --mode arnyek)",
+        "# Cel: URES mezok, amikre a szomszedos BABUK vetnek arnyekot.",
+        "#",
+        "# A GYUJTOT IGY INDITSD (csak az ures mezok kepei kellenek):",
+        "#   python -m tools.collect_fen_dataset --session <nev>",
+        "#       --fen-file positions_arnyek.txt --only-classes empty --max-mismatch 30",
+        "#",
+        "# MUNKAMENET: a babuk EGY allason belul NEM mozdulnak — a LAMPAT mozgasd,",
+        "# es allasonkent 6-10 fotot csinalj kulonbozo fenyiranybol/magassagbol:",
+        "#   - alacsony, oldalrol jovo feny (leghosszabb arnyek)",
+        "#   - a feny 4 fo iranybol; kozte olyan allas is, ahol az arnyek ELE epp",
+        "#     atvag egy ures mezot (ez a legnehezebb eset)",
+        "#   - 1-2 foto a robotkar / a kezed arnyekaval (a kar a kepen kivul legyen)",
+        "# Csak ezutan lepj a kovetkezo allasra (n) es rakd at a babukat.",
+        "",
+    ]
+    for b, why in items:
+        lines.append(f"{b.fen()}   # {why}")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--mode", choices=("jatszma", "tiszt", "arnyek"), default="jatszma",
+                    help="jatszma: Stockfish-kozepjatek (alap, foglaltsag-fej); "
+                         "tiszt: tiszt-drill a babutipus-fejhez; "
+                         "arnyek: sakktabla-mintazat, hogy a babuk arnyekot vessenek az URES mezokre "
+                         "(a gyujtot --only-classes empty-vel inditsd). Az utobbi ketto Stockfish nelkul fut.")
+    ap.add_argument("--shots", type=int, default=16, help="[--mode tiszt] ennyi allast general")
     ap.add_argument("--per-side", type=int, default=15, help="állás orientációnként (alap: 15 + 15 forgatva)")
     ap.add_argument("--min-pieces", type=int, default=26, help="ennyi bábu legyen legalább a táblán végig")
     ap.add_argument("-o", "--out", type=Path, default=Path("positions.txt"))
@@ -164,6 +355,32 @@ def main() -> None:
                     help="a mar osszegyujtott adat labels.csv-je: az uj adag a MEG HIANYZO "
                          "(mezo, osztaly) kombinaciokra optimalizal (pl. data_fen/labels.csv)")
     args = ap.parse_args()
+
+    if args.mode == "arnyek":
+        items = shadow_positions()
+        write_shadow_list(items, args.out)
+        n_empty = [sum(1 for sq in chess.SQUARES if b.piece_at(sq) is None) for b, _ in items]
+        print(f"Kiirva: {args.out.resolve()}")
+        print(f"  allasok        : {len(items)}")
+        print(f"  ures mezo/allas: {n_empty}  (= ennyi ROI mentodik fotonkent --only-classes empty mellett)")
+        print(f"  8 foto/allas eseten: {8 * sum(n_empty)} arnyekos ures ROI")
+        for b, why in items:
+            print(f"    - {why}")
+        return
+
+    if args.mode == "tiszt":
+        boards = officer_positions(args.shots)
+        write_officer_list(boards, args.out)
+        cov = type_coverage(boards)
+        print(f"Kiirva: {args.out.resolve()}")
+        print(f"  allasok       : {len(boards)}  (allasonkent 16 tiszt + 48 ures mezo)")
+        print(f"  ROI osszesen  : {len(boards) * 64}  ebbol tipus-cimkezett: {len(boards) * 16}")
+        print("  tipus-lefedettseg (hany kulonbozo mezon):")
+        for name in ("king", "queen", "rook", "bishop", "knight"):
+            sqs = cov.get(name, set())
+            dark = sum(1 for sq in sqs if sq in DARK)
+            print(f"    {name:7s} {len(sqs):2d}/64   (sotet mezon {dark}, vilagoson {len(sqs) - dark})")
+        return
 
     if not Path(args.engine).exists():
         raise SystemExit(f"Stockfish nem talalhato: {args.engine}\n  telepites: sudo apt install stockfish")

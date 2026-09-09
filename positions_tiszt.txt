@@ -1,0 +1,28 @@
+# TISZT-DRILL FEN-lista (tools/make_fen_positions.py --mode tiszt)
+# Cel: a babutipus-fej. Minden tiszt sok KULONBOZO mezon (vilagoson es
+# soteten is) szerepeljen, ne a mezot tanulja meg a modell a tipus helyett.
+#
+# FELRAKAS: ket sor, soronkent 8 tiszt; a gyujto diagramja (jobb oldali
+# ablak) mutatja pontosan. Fotonkent mindket sor eggyel feljebb csuszik es
+# a babuk sorrendje eltolodik -> ~8-16 babut kell athelyezni allasonkent.
+#
+# FORGATAS: minden allas felrakasa utan forgasd el a babukat a sajat
+# tengelyuk korul (kulonosen a HUSZART: nezzen elore/hatra/oldalra), es
+# ket-harom allasonkent a TABLAT is forditsd meg 180 fokkal.
+
+8/8/8/knnbbrrq/8/8/8/KQRRBBNN w - - 0 1
+8/8/bbrrqknn/8/8/8/RBBNNKQR/8 w - - 0 1
+8/rqknnbbr/8/8/8/NNKQRRBB/8/8 w - - 0 1
+nnbbrrqk/8/8/8/QRRBBNNK/8/8/8 w - - 0 1
+8/8/8/BBNNKQRR/8/8/8/brrqknnb w - - 0 1
+8/8/NKQRRBBN/8/8/8/qknnbbrr/8 w - - 0 1
+8/RRBBNNKQ/8/8/8/nbbrrqkn/8/8 w - - 0 1
+BNNKQRRB/8/8/8/rrqknnbb/8/8/8 w - - 0 1
+8/8/8/nnbbrrqk/8/8/8/QRRBBNNK w - - 0 1
+8/8/brrqknnb/8/8/8/BBNNKQRR/8 w - - 0 1
+8/qknnbbrr/8/8/8/NKQRRBBN/8/8 w - - 0 1
+nbbrrqkn/8/8/8/RRBBNNKQ/8/8/8 w - - 0 1
+8/8/8/BNNKQRRB/8/8/8/rrqknnbb w - - 0 1
+8/8/KQRRBBNN/8/8/8/knnbbrrq/8 w - - 0 1
+8/RBBNNKQR/8/8/8/bbrrqknn/8/8 w - - 0 1
+NNKQRRBB/8/8/8/rqknnbbr/8/8/8 w - - 0 1

@@ -29,6 +29,11 @@ Használat (repo gyökérből):
     python -m tools.collect_fen_dataset --session este_lampa --fen-file positions.txt --burst 3
     python -m tools.collect_fen_dataset --session ... --exposure 250 --wb-temp 4600   # fix exponálás
 
+    # ÁRNYÉK-GYŰJTÉS: a bábuk a táblán vannak (ők vetik az árnyékot a szomszédos
+    # mezőkre), de csak az ÜRES mezők képei kellenek -> --only-classes empty
+    python -m tools.collect_fen_dataset --session oldalfeny_arnyek --fen-file positions_arnyek.txt \
+        --only-classes empty --max-mismatch 30
+
 Billentyűk az előnézeti ablakban:
     SPACE  fotó (--burst darab frame) -> 64 ROI mentése a FEN címkéivel
     n      következő FEN (--fen-file listából; ha nincs, a terminálban kér be)
@@ -77,6 +82,36 @@ from vision.pipeline.batch_classifier import crop_with_context  # noqa: E402
 from vision.pipeline.board_detector import DetectionResult, detect_board_on_frame  # noqa: E402
 from vision.pipeline.orientation import apply_symmetry, symmetries  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# FOTO-PROTOKOLLOK (--protocol): mit valtoztass KET FOTO KOZOTT
+# ---------------------------------------------------------------------------
+# Egy allas felrakasa lassu, ezert egy allasbol tobb fotot csinalunk — de csak
+# akkor er valamit, ha kozben VALTOZTATSZ valamit (kulonben near-duplicate
+# kepeket gyujtunk, amik a tanitasban semmit nem adnak hozza). A szkript
+# fotonkent kiirja a kovetkezo teendot a terminalba ES a kameraablakba is.
+PROTOCOLS: dict[str, list[str]] = {
+    # A babuk vetette arnyek az URES mezokre: a babuk NEM mozdulnak, a FENYT
+    # mozgatod. A cel, hogy ugyanaz a mezo lasson arnyekot minden iranybol.
+    "arnyek": [
+        "lampa BALROL, ALACSONYAN (asztallap magassagaban) - leghosszabb arnyekok",
+        "lampa BALROL, kb. 45 fokrol (magasabban)",
+        "lampa JOBBROL, ALACSONYAN",
+        "lampa JOBBROL, kb. 45 fokrol",
+        "lampa SZEMBOL (a kameraval szemben), alacsonyan",
+        "lampa HATULROL (a kamera mogul), alacsonyan",
+        "lampa balrol + a szoba fovilagitasa LE (eros kontraszt, sotet hatter)",
+        "vess nagy arnyekot a tabla FOLE (kezzel/konyvvel) - a targy a KEPEN KIVUL legyen",
+    ],
+    # Tiszt-drill: itt a babuk allasa a lenyeg, a forgatasuk adja a varianciat.
+    "tiszt": [
+        "ahogy felraktad (a babuk elore neznek)",
+        "forgasd el MINDEN babut a sajat tengelye korul ~90 fokkal (a HUSZAR oldalra nezzen)",
+        "forgasd tovabb ~180 fokra (a huszar HATRAFELE nezzen)",
+        "lampa masik iranyba + a babuk maradhatnak",
+    ],
+}
+
+
 COLOR_DIRS = ("black", "empty", "white")
 CSV_FIELDS = [
     "file", "split", "session", "shot_id", "timestamp", "fen", "raw_r", "raw_c", "square",
@@ -103,6 +138,16 @@ def parse_args() -> argparse.Namespace:
                         "shot: fotónként; train/val: minden ide")
     p.add_argument("--val-every", type=int, default=5, help="minden N. állás/fotó a val_new-ba (split-mode position/shot)")
     p.add_argument("--no-save-frames", action="store_true", help="ne mentse a teljes kameraképet")
+    p.add_argument("--protocol", choices=tuple(PROTOCOLS), default=None,
+                   help="fotonkenti teendo-lista: a szkript minden mentes utan kiirja, mit valtoztass "
+                        "a kovetkezo fotoig (arnyek: a lampat mozgatod; tiszt: a babukat forgatod). "
+                        "A lista vegen szol, hogy lephetsz a kovetkezo allasra ('n').")
+    p.add_argument("--only-classes", default=None,
+                   help="csak ezeket az osztályokat mentse ROI-ként (vesszővel, pl. 'empty'); a többi mező "
+                        "kimarad a datasetből. A tábla-detektálás, a modell-ellenőrzés és az orientáció-igazítás "
+                        "TOVÁBBRA IS mind a 64 mezőből dolgozik, és a teljes kamerakép is mentődik. "
+                        "Árnyék-gyűjtéshez: a bábuk a táblán vannak (ők vetik az árnyékot), de csak az "
+                        "üres mezők képei kellenek.")
     # kamera
     p.add_argument("--camera-index", type=int, default=live.camera_index)
     p.add_argument("--width", type=int, default=live.camera_width)
@@ -344,8 +389,13 @@ class ModelChecker:
 # ---------------------------------------------------------------------------
 
 class Writer:
-    def __init__(self, out_dir: Path, session: str, save_frames: bool, cfg: AppConfig):
+    def __init__(self, out_dir: Path, session: str, save_frames: bool, cfg: AppConfig,
+                 only_classes: set[str] | None = None):
         self.out_dir, self.session, self.save_frames, self.cfg = out_dir, session, save_frames, cfg
+        # None = mind a 64 mezo mentodik; kulonben csak a felsorolt osztalyok
+        # (pl. {"empty"}): a tobbi ROI-t eldobjuk, de a CIMKEZES es az
+        # ellenorzes vegig a teljes 64 mezos raccsal dolgozik.
+        self.only_classes = only_classes
         for split in ("train_new", "val_new"):
             for c in COLOR_DIRS:
                 (out_dir / split / c).mkdir(parents=True, exist_ok=True)
@@ -378,6 +428,8 @@ class Writer:
                 lab = labels[r][c]
                 roi = rois[r][c]
                 if roi is None or roi.size == 0:
+                    continue
+                if self.only_classes is not None and lab.color_name not in self.only_classes:
                     continue
                 fname = f"{base}_r{r}c{c}_{lab.square}_{lab.symbol}.jpg"
                 rel = Path(split) / lab.color_name / fname
@@ -589,7 +641,17 @@ def main() -> None:
         else:
             print("  (nincs checkpoint, a modell-alapú FEN/orientáció-ellenőrzés kimarad)")
 
-    writer = Writer(args.out_dir, args.session, save_frames=not args.no_save_frames, cfg=cfg)
+    only_classes: set[str] | None = None
+    if args.only_classes:
+        only_classes = {c.strip() for c in args.only_classes.split(",") if c.strip()}
+        unknown = only_classes - set(COLOR_DIRS)
+        if unknown:
+            raise SystemExit(f"Ismeretlen osztály a --only-classes-ban: {sorted(unknown)} (választható: {COLOR_DIRS})")
+        print(f"CSAK EZEK MENTŐDNEK: {sorted(only_classes)} — a többi mező ROI-ja kimarad "
+              f"(a címkézés és az ellenőrzés továbbra is mind a 64 mezőből dolgozik).")
+
+    writer = Writer(args.out_dir, args.session, save_frames=not args.no_save_frames, cfg=cfg,
+                    only_classes=only_classes)
     cap = open_camera(args)
     print_exposure_banner(cap, args)
 
@@ -597,6 +659,9 @@ def main() -> None:
     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}")
     print_position_help(fen)
     print("SPACE=fotó  n=következő FEN  f=FEN bekérés  d=tábla újradetektálás  o=overlay  e=exponálás  q=kilépés")
+    if args.protocol:
+        print(f"\nFOTO-PROTOKOLL '{args.protocol}': {len(PROTOCOLS[args.protocol])} foto ebben az allasban, "
+              "a szkript minden fotonal kiirja, mit valtoztass.")
 
     det: DetectionResult | None = None
     labels = fen_to_raw_labels(fen)
@@ -606,6 +671,23 @@ def main() -> None:
     brightness = deque(maxlen=60)
     shot_index = 0
     status = "tábla: nincs detektálva (d vagy SPACE)"
+
+    # Foto-protokoll: hanyadik lepesnel tartunk EBBEN az allasban.
+    plan: list[str] = PROTOCOLS.get(args.protocol, []) if args.protocol else []
+    plan_i = 0
+
+    def plan_line() -> str | None:
+        """A kovetkezo teendo szovege, vagy None ha nincs protokoll."""
+        if not plan:
+            return None
+        if plan_i < len(plan):
+            return f"[{plan_i + 1}/{len(plan)}] {plan[plan_i]}"
+        return "EZ AZ ALLAS KESZ -> nyomj 'n'-t a kovetkezo allasra"
+
+    def print_plan() -> None:
+        line = plan_line()
+        if line:
+            print(f"  >>> KOVETKEZO FOTO: {line}")
 
     def redetect(frame) -> bool:
         nonlocal det, status
@@ -630,6 +712,8 @@ def main() -> None:
     # A felrakandó állás diagramja — FEN-váltáskor frissül, nem frame-enként.
     diagram = render_board_diagram(fen)
     cv2.imshow(WIN_DIAGRAM, diagram)
+
+    print_plan()
 
     read_fail_streak = 0
     live_check_t = 0.0          # az elo orientacio-ellenorzes utolso futasa
@@ -676,6 +760,10 @@ def main() -> None:
                 else:
                     col = (0, 255, 0) if n < 6 else (0, 165, 255)
                     put_text(preview, f"orientacio OK | modell vs FEN: {n} eltero mezo", 132, col)
+            _pl = plan_line()
+            if _pl is not None:
+                put_text(preview, f"KOVETKEZO FOTO: {_pl}", 158,
+                         (0, 255, 255) if plan_i < len(plan) else (0, 200, 0))
             if det is not None and det.centers_img is not None:
                 for r in range(8):
                     for c in range(8):
@@ -709,6 +797,7 @@ def main() -> None:
                 if new_fen:
                     prev_fen = fen
                     fen = new_fen
+                    plan_i = 0          # uj allas -> elolrol a foto-protokoll
                     labels = fen_to_raw_labels(fen)
                     fen_occ = fen_to_raw_occupancy(fen)
                     last_check = None
@@ -717,6 +806,7 @@ def main() -> None:
                     print(f"FEN [{fen_idx + 1}/{max(1, len(fen_list))}]: {fen}  -> split: {choose_split(args.split_mode, args.val_every, fen, shot_index)}")
                     print_position_help(fen, prev_fen)
                     print("  Állítsd fel a táblát, ellenőrizd az overlay-t, majd SPACE.")
+                    print_plan()
             elif key == ord(" "):
                 if det is None and not redetect(frame):
                     continue
@@ -783,6 +873,9 @@ def main() -> None:
                     if last_check is not None:
                         msg += f" | modell-eltérés: {last_check['n_mismatch']}"
                     print(msg)
+                    if plan_i < len(plan):
+                        plan_i += 1
+                    print_plan()
     finally:
         cap.release()
         cv2.destroyAllWindows()

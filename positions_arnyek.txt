@@ -1,0 +1,21 @@
+# ARNYEK-DRILL FEN-lista (tools/make_fen_positions.py --mode arnyek)
+# Cel: URES mezok, amikre a szomszedos BABUK vetnek arnyekot.
+#
+# A GYUJTOT IGY INDITSD (csak az ures mezok kepei kellenek):
+#   python -m tools.collect_fen_dataset --session <nev>
+#       --fen-file positions_arnyek.txt --only-classes empty --max-mismatch 30
+#
+# MUNKAMENET: a babuk EGY allason belul NEM mozdulnak — a LAMPAT mozgasd,
+# es allasonkent 6-10 fotot csinalj kulonbozo fenyiranybol/magassagbol:
+#   - alacsony, oldalrol jovo feny (leghosszabb arnyek)
+#   - a feny 4 fo iranybol; kozte olyan allas is, ahol az arnyek ELE epp
+#     atvag egy ures mezot (ez a legnehezebb eset)
+#   - 1-2 foto a robotkar / a kezed arnyekaval (a kar a kepen kivul legyen)
+# Csak ezutan lepj a kovetkezo allasra (n) es rakd at a babukat.
+
+1r1r1q1k/n1n1b1b1/1p1p1p1p/p1p1p1p1/1P1P1P1P/P1P1P1P1/1B1B1N1N/K1Q1R1R1 w - - 0 1   # 32 babu a SOTET mezokon (feher lent) -> a 32 VILAGOS mezo ures
+1P1N1N1B/P1P1P1P1/1K1P1P1P/B1R1R1Q1/1q1r1r1b/p1p1p1k1/1p1p1p1p/b1n1n1p1 w - - 0 1   # ugyanaz, mas babukiosztas es forditott szinek -> mas arnyekformak
+r1r1q1k1/1n1n1b1b/p1p1p1p1/1p1p1p1p/P1P1P1P1/1P1P1P1P/B1B1N1N1/1K1Q1R1R w - - 0 1   # 32 babu a VILAGOS mezokon -> a 32 SOTET mezo ures
+P1N1N1B1/1P1P1P1P/K1P1P1P1/1B1R1R1Q/q1r1r1b1/1p1p1p1k/p1p1p1p1/1b1n1n1p w - - 0 1   # ugyanaz, mas babukiosztas es forditott szinek
+8/r1r1q1k1/8/n1n1b1b1/8/B1B1N1N1/8/K1Q1R1R1 w - - 0 1   # 16 tiszt 4x4-es racson (a1-rol indulva) -> 48 ures mezo, hosszu arnyekok
+1r1r1q1k/8/1n1n1b1b/8/1B1B1N1N/8/1K1Q1R1R/8 w - - 0 1   # ugyanaz egy mezovel eltolva (b2-rol indulva)
