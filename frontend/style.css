@@ -281,11 +281,13 @@ h1, h2, h3 {
 }
 
 /* A motor javaslata: halvány nyíl a tábla fölött. */
+/* A helyzetét és a méretét a ui/board.js írja (syncArrowViewport), mert
+   annak PONTOSAN a tábla rácsára kell illeszkednie, nem a konténerre —
+   lásd az ottani magyarázatot. Ezért nincs itt inset/width/height. */
 #board-arrow {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
   pointer-events: none;
   z-index: 3;
   overflow: visible;

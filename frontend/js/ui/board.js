@@ -61,7 +61,7 @@ export function initBoard(onDropHandler) {
 
   board = Chessboard(boardElement, {
     position: "start",
-    draggable: true,
+    draggable: false,
     moveSpeed: "fast",
     snapbackSpeed: 150,
     snapSpeed: 100,
@@ -133,8 +133,44 @@ export function highlightLastMove(uci) {
 
 /* ── A motor javaslata: halvány nyíl ─────────────────────────
    Az SVG viewBoxa 0..100 mindkét irányban (preserveAspectRatio="none"),
-   így a mezőközepek egyszerű százalékok — a tábla mérete változhat, a nyíl
-   együtt mozog vele. */
+   így a mezőközepek egyszerű százalékok.
+
+   Az SVG-t viszont NEM lehet a #board-wrap egészére kifeszíteni, pedig
+   kézenfekvő lenne. A chessboard.js EGÉSZRE KEREKÍTI a mezőméretet, a
+   tábla tehát majdnem mindig keskenyebb a konténerénél, ráadásul van egy
+   1px-es kerete is (box-sizing: content-box, tehát a keret KÍVÜLRE nő).
+   Mérve: konténer 590.39px, mezőméret 73px -> a valódi rács 8*73 = 584px.
+   A teljes konténerre feszített viewBox így 73.80px-es „mezőkkel" számol
+   73 helyett, és a hiba vonalanként halmozódik: az a-vonalon még -0.6px,
+   a h-vonalon már +5.0px — a nyíl jobbra csúszik a mező közepétől.
+
+   Ezért az SVG-t a tábla VALÓDI rácsára illesztjük, a kereten belülre. */
+
+function syncArrowViewport(svg) {
+  const wrap = document.getElementById("board-wrap");
+  const a1 = document.querySelector("#board .square-a1");
+  const h8 = document.querySelector("#board .square-h8");
+  if (!wrap || !a1 || !h8) return;
+
+  // A rácsot MAGUKBÓL A MEZŐKBŐL olvassuk ki, nem a tábla elemének a
+  // méretéből: így nem kell a kerettel, a box-sizinggal vagy az oldal
+  // nagyításával számolni — egyik sem tudja elrontani. Az a1 és a h8
+  // átellenes sarok mindkét tájolásban, ezért elég a kettő min/maxa.
+  const wrapRect = wrap.getBoundingClientRect();
+  const one = a1.getBoundingClientRect();
+  const other = h8.getBoundingClientRect();
+  if (!one.width) return;
+
+  const left = Math.min(one.left, other.left);
+  const top = Math.min(one.top, other.top);
+  const width = Math.max(one.right, other.right) - left;
+  const height = Math.max(one.bottom, other.bottom) - top;
+
+  svg.style.left = `${left - wrapRect.left}px`;
+  svg.style.top = `${top - wrapRect.top}px`;
+  svg.style.width = `${width}px`;
+  svg.style.height = `${height}px`;
+}
 
 function squareCenter(square, orientation) {
   if (typeof square !== "string" || square.length < 2) return null;
@@ -198,6 +234,9 @@ export function drawSuggestionArrow(uci) {
   if (!svg) return;
 
   lastSuggestionUci = typeof uci === "string" && uci.length >= 4 ? uci : null;
+
+  // A tábla átméreteződhetett az előző rajzolás óta.
+  syncArrowViewport(svg);
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
   if (!lastSuggestionUci || !board) return;
