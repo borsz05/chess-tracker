@@ -19,13 +19,6 @@ export function sideToMoveLabel(side) {
   return side === "w" ? "Fehér" : "Fekete";
 }
 
-export function formatResultLabel(result) {
-  if (result === "1-0") return "Fehér nyert (1-0)";
-  if (result === "0-1") return "Fekete nyert (0-1)";
-  if (result === "1/2-1/2") return "Döntetlen (1/2-1/2)";
-  return "Parti vége";
-}
-
 /** "1-0" | "0-1" | "1/2-1/2" — a lezárt parti eredménye, különben null. */
 export function decisiveResult(state) {
   const r = state?.result;
@@ -54,4 +47,38 @@ export function formatFinishReason(status = {}) {
   if (status.is_insufficient_material) return "Anyaghiány";
   if (status.is_check) return "Sakk";
   return "Lezárva";
+}
+/**
+ * A lépni következő fél királyának mezője a FEN-ből (pl. "e1"), vagy null.
+ *
+ * Sakkban mindig a LÉPNI KÖVETKEZŐ fél királya áll sakkban, ezért elég a
+ * FEN két első mezője: a tábla és a soron lévő szín. A tábla felső sora a
+ * 8-as sor, ezért megy a rank 8-tól lefelé.
+ */
+export function kingSquareFromFen(fen) {
+  if (typeof fen !== "string") return null;
+
+  const [placement, sideToMove] = fen.trim().split(/\s+/);
+  if (!placement || !sideToMove) return null;
+
+  const kingChar = sideToMove === "b" ? "k" : "K";
+  const ranks = placement.split("/");
+  if (ranks.length !== 8) return null;
+
+  for (let i = 0; i < 8; i++) {
+    let file = 0;
+
+    for (const ch of ranks[i]) {
+      if (ch >= "1" && ch <= "8") {
+        file += Number(ch);
+        continue;
+      }
+      if (ch === kingChar) {
+        return `${"abcdefgh"[file]}${8 - i}`;
+      }
+      file += 1;
+    }
+  }
+
+  return null;
 }

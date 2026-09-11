@@ -88,6 +88,10 @@ body {
   --highlight-light: #F6EB72;   /* világos citromsárga */
   --highlight-dark:  #DCC34B;   /* mustársárga */
 
+  /* Sakk: a király mezőjére kerülő piros derengés két szín-stopja. */
+  --check-core: rgba(214, 44, 32, 0.92);
+  --check-edge: rgba(184, 26, 16, 0.42);
+
   /* A motor javaslatának nyila. A geometria a lichess chessgroundból jön,
      a szín és az áttetszőség innen állítható. */
   --arrow-color:   #47C1F9;
@@ -291,6 +295,28 @@ h1, h2, h3 {
   color: var(--board-dark) !important;
 }
 
+/* ── SAKK: piros derengés a király mezőjén ───────────────────
+   A lichess megoldásának a REPRODUKCIÓJA (a pontos szabályt nem sikerült
+   kinyerni a lila repóból, ezért nem szó szerinti másolat): középen tömör
+   piros, ami kifelé haladva tűnik el, így a király körül "aura" látszik.
+
+   A `background-image` és nem `background`: így a mező alapszíne (világos
+   vagy sötét) alatta MARAD, és a piros csak ráül. Ez azért kell, mert a
+   gradiens széle átlátszó — ha felülírnánk a hátteret, a mező sarkai
+   kilyukadnának.
+
+   Ez a szabály az utolsó lépés kiemelése UTÁN áll, hogy sakknál a piros
+   nyerjen akkor is, ha a király épp a kiemelt mezőn áll. */
+#board .square-55d63.in-check {
+  background-image: radial-gradient(
+    ellipse at center,
+    var(--check-core) 0%,
+    var(--check-core) 26%,
+    var(--check-edge) 62%,
+    transparent 88%
+  );
+}
+
 /* A motor javaslata: halvány nyíl a tábla fölött. */
 /* A helyzetét és a méretét a ui/board.js írja (syncArrowViewport), mert
    annak PONTOSAN a tábla rácsára kell illeszkednie, nem a konténerre —
@@ -433,11 +459,6 @@ h1, h2, h3 {
   color: var(--eval-white);
 }
 
-.top-score.score-draw {
-  background: var(--surface-1);
-  color: var(--text-main);
-}
-
 /* A legjobb vonal hangsúlyosabb, az alternatívák halkabbak. */
 .top-line.top-line-best .top-move-line {
   font-size: 1.08rem;
@@ -462,10 +483,6 @@ h1, h2, h3 {
   color: var(--text-soft);
   font-size: 1.00rem;
   line-height: 1.25;
-}
-
-.top-line-expand {
-  color: var(--text-dim);
 }
 
 /* ── LÉPÉSEK SZEKCIÓ ──────────────────────────────────────── */
@@ -610,17 +627,9 @@ h1, h2, h3 {
   color: var(--text-soft);
 }
 
-.status-line .status-sep {
-  display: none;
-}
-
 .status-move-no {
   font-weight: 700;
   color: var(--accent-dark);
-}
-
-.status-sep {
-  color: var(--text-dim);
 }
 
 .status-side {
@@ -668,18 +677,6 @@ h1, h2, h3 {
   display: none;
 }
 
-.status-note.note-alert {
-  background: var(--accent-warm-soft);
-  border-color: var(--accent-warm);
-  color: #6E5712;
-}
-
-.status-note.note-info {
-  background: var(--surface-1);
-  border-color: var(--panel-border);
-  color: var(--text-soft);
-}
-
 .status-note.note-error {
   background: #F3D9CF;
   border-color: #C06A4A;
@@ -718,10 +715,6 @@ button:hover {
 
 button:active {
   transform: translateY(1px);
-}
-
-.small {
-  opacity: 0.80;
 }
 
 /* ── TOAST ────────────────────────────────────────────────── */

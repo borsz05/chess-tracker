@@ -1,5 +1,5 @@
 import { getCurrentState } from "../app/state.js";
-import { isGameFinished } from "../utils/game.js";
+import { isGameFinished, kingSquareFromFen } from "../utils/game.js";
 
 let board = null;
 
@@ -115,8 +115,10 @@ function observeBoardSize(boardElement) {
 
 const SQUARE_CLASS = "square-55d63";
 const HIGHLIGHT_CLASS = "highlight-last-move";
+const CHECK_CLASS = "in-check";
 
 let lastHighlightedUci = null;
+let lastCheckSquare = null;
 
 export function highlightLastMove(uci) {
   lastHighlightedUci = typeof uci === "string" && uci.length >= 4 ? uci : null;
@@ -129,6 +131,26 @@ export function highlightLastMove(uci) {
 
   $board.find(`.square-${lastHighlightedUci.slice(0, 2)}`).addClass(HIGHLIGHT_CLASS);
   $board.find(`.square-${lastHighlightedUci.slice(2, 4)}`).addClass(HIGHLIGHT_CLASS);
+}
+
+/* ── Sakk: piros derengés a király mezőjén ───────────────────
+   A mezőt a FEN-ből számoljuk, mert a backend csak azt küldi, hogy VAN
+   sakk, azt nem, hogy hol — sakkban viszont mindig a lépni következő fél
+   királya áll sakkban, tehát a FEN-ből egyértelmű. */
+
+function applyCheckClass() {
+  const $board = window.jQuery ? window.jQuery("#board") : null;
+  if (!$board) return;
+
+  $board.find(`.${SQUARE_CLASS}`).removeClass(CHECK_CLASS);
+  if (!lastCheckSquare) return;
+
+  $board.find(`.square-${lastCheckSquare}`).addClass(CHECK_CLASS);
+}
+
+export function highlightCheck(fen, isCheck) {
+  lastCheckSquare = isCheck ? kingSquareFromFen(fen) : null;
+  applyCheckClass();
 }
 
 /* ── A motor javaslata: halvány nyíl ─────────────────────────
@@ -285,6 +307,7 @@ function syncColumnHeight() {
 /** Újrarajzolja a kiemelést és a nyilat — pl. a tábla átrajzolása után. */
 export function refreshBoardDecorations() {
   highlightLastMove(lastHighlightedUci);
+  applyCheckClass();
   drawSuggestionArrow(lastSuggestionUci);
 }
 
@@ -300,8 +323,14 @@ export function syncBoardFromState(previousState, nextState, opts = {}) {
     board.position(nextState.fen, true);
   }
 
+  const checkNow = !!nextState?.status?.is_check;
+
   highlightLastMove(nextState?.last_move?.uci ?? null);
+  highlightCheck(nextState?.fen ?? null, checkNow);
   // A chessboard.js animáció közben újraépíti a mezőket; a kiemelést az
   // animáció után is ki kell tenni.
-  setTimeout(() => highlightLastMove(nextState?.last_move?.uci ?? null), 260);
+  setTimeout(() => {
+    highlightLastMove(nextState?.last_move?.uci ?? null);
+    highlightCheck(nextState?.fen ?? null, checkNow);
+  }, 260);
 }

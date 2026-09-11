@@ -95,7 +95,6 @@ async function handleNewGame() {
   try {
     const state = await postNewGame();
     applyServerState(state, { animateFromLast: false });
-    setText(getEl("pgn-status"), "");
   } catch (err) {
     console.error("Új játék hiba:", err);
   }

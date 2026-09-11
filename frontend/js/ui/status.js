@@ -26,27 +26,6 @@ function connectionText(connectionState) {
   return "";
 }
 
-/**
- * A jegyzet csak akkor mond valamit, ha BAJ van — jelenleg: sakk.
- *
- * A futó elemzés SZÁNDÉKOSAN nincs kijelezve. A motorvonalak a panel
- * tetején végig ott vannak, csak az értékük frissül, tehát az „Elemzés…"
- * nem mondott semmit, amit ne lehetne látni — viszont minden egyes lépés
- * után megjelent ~2 másodpercre, és ez okozta a státuszsáv ugrálását.
- */
-function statusNote(state, finished) {
-  const status = state?.status || {};
-
-  // Lezárt partinál a panel tetején álló sáv mindent elmond (eredmény +
-  // ok), a sorban nem ismételjük meg.
-  if (finished) return null;
-
-  if (status.is_check) {
-    return { text: "Sakk!", kind: "note-alert" };
-  }
-  return null;
-}
-
 /** Teljes szélességű sáv a panel tetején — a parti vége nem kis doboz. */
 function updateGameOverBanner(state, finished) {
   const banner = getEl("game-over-banner");
@@ -72,7 +51,6 @@ function updateGameOverBanner(state, finished) {
 export function updateStatusUI(state, connectionState) {
   const statusSection = document.querySelector(".status-section");
   const connectionDiv = getEl("connection-status");
-  const noteDiv = getEl("game-status");
   const moveNoDiv = getEl("status-move-no");
   const sideDiv = getEl("status-side");
 
@@ -90,19 +68,6 @@ export function updateStatusUI(state, connectionState) {
     sideDiv,
     finished ? "Parti vége" : `${sideToMoveLabel(safeState.side_to_move)} következik`
   );
-
-  const note = statusNote(safeState, finished);
-  if (noteDiv) {
-    if (note) {
-      setText(noteDiv, note.text);
-      noteDiv.classList.remove("note-alert", "note-info", "note-error");
-      noteDiv.classList.add(note.kind);
-      noteDiv.hidden = false;
-    } else {
-      setText(noteDiv, "");
-      noteDiv.hidden = true;
-    }
-  }
 
   updateGameOverBanner(safeState, finished);
 

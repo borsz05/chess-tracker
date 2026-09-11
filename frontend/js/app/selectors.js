@@ -1,7 +1,3 @@
-export function selectFen(state) {
-  return state?.fen ?? null;
-}
-
 export function selectMoves(state) {
   return Array.isArray(state?.moves) ? state.moves : [];
 }
