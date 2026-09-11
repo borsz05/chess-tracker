@@ -163,6 +163,7 @@ class OccupancyColorModel:
         onnx_path: str | Path | None = None,
         num_threads: int | None = None,
         allow_int8: bool = True,
+        allow_spinning: bool = False,
     ):
         self.weights_path = None if weights_path is None else Path(weights_path)
         self.onnx_path = Path(onnx_path) if onnx_path else (
@@ -173,6 +174,7 @@ class OccupancyColorModel:
         if onnx_path is None and allow_int8 and self.onnx_path is not None and self.onnx_path.exists():
             self.onnx_path = self._follow_int8_recommendation(self.onnx_path)
         self.num_threads = num_threads
+        self.allow_spinning = allow_spinning
         self.model = None            # torch modul (csak torch backendnél)
         self.session = None          # onnxruntime.InferenceSession (csak onnx backendnél)
         self.device = None
@@ -258,6 +260,19 @@ class OccupancyColorModel:
         so.inter_op_num_threads = 1
         if self.num_threads:
             so.intra_op_num_threads = int(self.num_threads)
+        if not self.allow_spinning:
+            # Az ORT szálpoolja alapból PÖRÖGVE vár a következő következtetésre.
+            # Élesben — ahol 30-szor futunk másodpercenként, és a szálak a
+            # hívások KÖZÖTT is ébren maradnak — ez üresjáratban tart kilenc
+            # szálat ~100%-on. Mérve (28 ROI, 30x/mp, ez a gép):
+            #     alap szálszám, pörgéssel   8,0 ms   922% CPU
+            #     4 szál, pörgéssel          9,7 ms   330% CPU
+            #     4 szál, pörgés NÉLKÜL     12,1 ms   126% CPU
+            # A +4 ms bőven belefér a 33 ms-os képkocka-keretbe, a 7x CPU
+            # viszont felszabadítja a gépet (a böngésző emiatt akadozott).
+            # A tools/export_onnx.py szándékosan allow_spinning=True-val mér:
+            # ott a modell CSÚCS-átbocsátása a kérdés, nem az éles terhelés.
+            so.add_session_config_entry("session.intra_op.allow_spinning", "0")
         self.session = ort.InferenceSession(str(self.onnx_path), so, providers=["CPUExecutionProvider"])
         self._input_name = self.session.get_inputs()[0].name
         self._output_names = [o.name for o in self.session.get_outputs()]

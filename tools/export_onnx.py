@@ -240,7 +240,10 @@ def main() -> None:
     size = meta["img_size"]
 
     torch_m = OccupancyColorModel(args.weights, device="cpu", backend="torch", num_threads=args.threads)
-    onnx_m = OccupancyColorModel(args.weights, backend="onnx", onnx_path=onnx_path, num_threads=args.threads, allow_int8=False)
+    # allow_spinning=True: itt a modell CSUCS-atbocsatasat merjuk (fp32 vs INT8),
+    # ahhoz a porgo szalpool a helyes beallitas. Elesben forditva van, lasd
+    # vision/models/occupancy_color_model.py _init_onnx.
+    onnx_m = OccupancyColorModel(args.weights, backend="onnx", onnx_path=onnx_path, num_threads=args.threads, allow_int8=False, allow_spinning=True)
     print(f"torch: {torch_m!r}\nonnx : {onnx_m!r}")
 
     # --- paritás -------------------------------------------------------------
@@ -298,7 +301,7 @@ def main() -> None:
                 q_path = quantize(onnx_path, mode, calib_x)
             except Exception as e:
                 print(f"  {mode}: HIBA {type(e).__name__}: {e}"); continue
-            q_m = OccupancyColorModel(args.weights, backend="onnx", onnx_path=q_path, num_threads=args.threads, allow_int8=False)
+            q_m = OccupancyColorModel(args.weights, backend="onnx", onnx_path=q_path, num_threads=args.threads, allow_int8=False, allow_spinning=True)
             entry = {"path": str(q_path)}
             entry["parity_random"] = parity(onnx_m, q_m, x_rand, f"fp32 vs int8-{mode}, random")
             if x_real is not None:

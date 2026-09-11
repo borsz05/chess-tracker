@@ -20,7 +20,12 @@ class AppConfig:
     # (alapból <weights_path>.onnx-ra ír; onnx_path=None ezt keresi).
     inference_backend: str = "auto"
     onnx_path: str | None = None
-    inference_threads: int | None = None
+    # Az ONNX Runtime intra-op szálainak száma. None = az összes mag, ami ezen
+    # a 12 szálas gépen mérve 922% CPU-t jelentett (a szálak a következtetések
+    # KÖZÖTT is pörögtek); 4 szál + pörgés nélkül 126% CPU, és a klasszifikáció
+    # 8,0 ms helyett 12,1 ms — a 33 ms-os képkocka-keretben ez elfér. A pörgés
+    # kikapcsolása: vision/models/occupancy_color_model.py _init_onnx.
+    inference_threads: int | None = 4
     # Ha az export (--int8) egy INT8 változatot ajánlott (black recall nem
     # romlott), auto módban azt töltjük; False -> mindig a fp32 .onnx.
     allow_int8: bool = True
