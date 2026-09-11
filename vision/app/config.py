@@ -25,7 +25,8 @@ class AppConfig:
     # KÖZÖTT is pörögtek); 4 szál + pörgés nélkül 126% CPU, és a klasszifikáció
     # 8,0 ms helyett 12,1 ms — a 33 ms-os képkocka-keretben ez elfér. A pörgés
     # kikapcsolása: vision/models/occupancy_color_model.py _init_onnx.
-    inference_threads: int | None = 4
+    # 2 szál: 78% CPU / 13,1 ms — még kíméletesebb, +1 ms a 4 szálhoz képest.
+    inference_threads: int | None = 2
     # Ha az export (--int8) egy INT8 változatot ajánlott (black recall nem
     # romlott), auto módban azt töltjük; False -> mindig a fp32 .onnx.
     allow_int8: bool = True
