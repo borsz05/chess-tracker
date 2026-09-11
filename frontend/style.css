@@ -66,6 +66,17 @@ body {
   --accent-warm-dark: #7A6010;
   --accent-warm-soft: rgba(220, 195, 75, 0.30);
 
+  /* A FEHÉR bábuk színe a wk.png-ből, a bábu pixeleire (alfa > 8) számolva.
+     A feketével ellentétben itt az alfa-súlyozott ÁTLAG (#BCAFA1) és a
+     MEDIÁN (#ECD9C6) messze van egymástól, mert a fehér bábunak vastag
+     sötét kontúrja van, ami lehúzza az átlagot — a feketénél nem volt mit
+     lehúzni (átlag #3F3A38 vs medián #413A37). Ezért itt a MEDIÁN van
+     használatban: az átlag szürkés-drappnak, piszkosnak látszott. */
+  --piece-white: #ECD9C6;
+  --piece-white-dark: #9A8F84;   /* a hover-gomb kerete */
+
+  /* Szöveg sötét (grafit) háttéren: pontszám-jelvények, toast, parti-vége
+     sáv. NEM az eval-sáv világos fele — az a --piece-white. */
   --eval-white: #F3E6CE;
   --eval-black: #3F3A38;
 
@@ -181,7 +192,7 @@ h1, h2, h3 {
   left: 0;
   width: 100%;
   height: 50%;
-  background: var(--eval-white);
+  background: var(--piece-white);
   transition: height 0.8s ease-out;
 }
 
@@ -345,7 +356,7 @@ h1, h2, h3 {
   font-weight: 800;
   font-size: 1.30rem;
   letter-spacing: 0.01em;
-  color: var(--accent-warm);
+  color: var(--piece-white);
 }
 
 .game-over-banner-result {
@@ -557,12 +568,12 @@ h1, h2, h3 {
 
 /* Az utolsó lépés sora. A háttér szándékosan alig erősebb a csíkozásnál
    (0.05 páratlan sor -> 0.07 itt): a sort nem a háttér jelöli ki, hanem a
-   bal szélen futó MUSTÁRSÁRGA sáv — ugyanaz a szín, mint a táblán kiemelt
-   két mezőé, így a panel és a tábla ugyanarra a lépésre mutat. Halk marad,
-   és nem versenyzik a motorvonal szintén mustársárga első lépésével. */
+   bal szélen futó GRAFIT sáv — ugyanaz a szín, mint a gomboké és az
+   eval-sáv sötét feléé, vagyis a fekete bábuk átlagszíne. Halk marad, és
+   nem versenyzik a motorvonal mustársárga első lépésével. */
 #moves-list li.last-move {
   background: rgba(63, 58, 56, 0.11) !important;
-  border-left: 3px solid var(--accent-warm);
+  border-left: 3px solid var(--board-dark);
 }
 
 #moves-list li.last-move .move-white,
@@ -690,15 +701,17 @@ button {
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  color: var(--eval-white);
+  color: var(--piece-white);
   white-space: nowrap;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
+/* Hover: a két szín helyet cserél — a gomb a FEHÉR bábuk színét veszi fel,
+   a felirat pedig a FEKETÉKÉT. */
 button:hover {
-  background: var(--accent-warm);
-  border-color: var(--accent-warm-dark);
-  color: var(--accent-dark);
+  background: var(--piece-white);
+  border-color: var(--piece-white-dark);
+  color: var(--accent);
 }
 
 button:active {
