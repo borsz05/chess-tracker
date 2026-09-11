@@ -149,12 +149,14 @@ class BackendSyncClient:
     def push_move(self, uci: str) -> dict:
         return self._request_json("POST", "/api/move", {"uci": uci})
 
-    def is_robot_busy(self) -> bool:
+    def poll_status(self) -> dict:
+        """A backend fél másodperces lekérdezése: mozog-e a robot, és melyik
+        partiban járunk. A `game_epoch` minden /api/new-game hívásnál nő —
+        ebből tudja meg a vision, hogy a weben új partit indítottak."""
         try:
-            resp = self._request_json("GET", "/api/robot/busy")
-            return bool(resp.get("busy", False))
+            return self._request_json("GET", "/api/robot/busy")
         except Exception:
-            return False
+            return {}
 
 
 class LatestFrameCamera:
@@ -300,6 +302,12 @@ class LiveProcessor:
         self._robot_was_busy = False
         self._robot_busy_cache = False
         self._robot_busy_last_check = 0.0
+
+        # A backend parti-számlálója. None = még egyszer sem kérdeztük le;
+        # ilyenkor CSAK megjegyezzük, nem resetelünk (induláskor nem akarunk
+        # egy fölösleges tracker-resetet).
+        self._backend_game_epoch: int | None = None
+        self._new_game_pending = False
         # Timing state
         self._init_start_wall: float = time.time()
         self._init_done_wall: float | None = None
@@ -431,15 +439,28 @@ class LiveProcessor:
             self._push_move_to_backend(result.uci)
 
     def _check_robot_busy(self) -> bool:
-        """Visszaadja hogy a robot éppen mozog-e. Fél másodpercenként frissíti a cache-t."""
+        """Visszaadja hogy a robot éppen mozog-e. Fél másodpercenként frissíti a
+        cache-t, és ugyanebből a válaszból veszi észre, ha új parti indult."""
         now = time.time()
         if now - self._robot_busy_last_check < 0.5:
             return self._robot_busy_cache
         self._robot_busy_last_check = now
+
         if self.backend is None:
             self._robot_busy_cache = False
-        else:
-            self._robot_busy_cache = self.backend.is_robot_busy()
+            return self._robot_busy_cache
+
+        status = self.backend.poll_status()
+        self._robot_busy_cache = bool(status.get("busy", False))
+
+        epoch = status.get("game_epoch")
+        if epoch is not None:
+            if self._backend_game_epoch is None:
+                self._backend_game_epoch = epoch
+            elif epoch != self._backend_game_epoch:
+                self._backend_game_epoch = epoch
+                self._new_game_pending = True
+
         return self._robot_busy_cache
 
     def _worker_loop(self, camera: LatestFrameCamera):
@@ -454,6 +475,24 @@ class LiveProcessor:
                 continue
 
             robot_busy = self._check_robot_busy()
+
+            # A backenden új parti indult (a weboldal "Új parti" gombja vagy egy
+            # /api/new-game hívás). A saját trackerünk ilyenkor még a RÉGI
+            # álláson áll, ezért újra kell építeni — különben a következő
+            # fizikai lépést a régi partihoz képest számolná ki, és a backend
+            # "Illegal move in this position"-nel dobná vissza.
+            #
+            # Itt SZÁNDÉKOSAN nem a request_reset(sync_backend=True) fut: azt a
+            # 'r' billentyű használja, és visszahívná a /api/new-game-et, ami
+            # megint növelné a game_epochot -> végtelen reset-kör.
+            if self._new_game_pending:
+                self._new_game_pending = False
+                fen = self.backend.current_fen() if self.backend is not None else None
+                logger.info("Új parti a backenden — tracker reset (%s).", fen or "AppConfig.start_fen")
+                self._reset_tracker(start_fen=fen)
+                self._set_backend_status("new-game received", None)
+                time.sleep(0.5)
+                continue
 
             # Ha a robot mozog: skip minden frame-et, ne zavarjuk össze a detektálást
             if robot_busy:

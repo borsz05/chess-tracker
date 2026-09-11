@@ -51,10 +51,15 @@ def post_move(request: Request, req: MoveRequest):
 
 @router.get("/robot/busy")
 def get_robot_busy(request: Request):
+    """A vision folyamat fél másodpercenként hívja. A `game_epoch` azért utazik
+    együtt a `busy`-val, hogy ne kelljen külön lekérdezés: ha a szám változik,
+    a vision tudja, hogy új parti indult (pl. a weboldal "Új parti" gombjáról),
+    és nullázza a saját trackerét."""
     state = get_backend_state(request)
     with state._lock:
         busy = state.robot_busy
-    return {"busy": busy}
+        game_epoch = state.game_epoch
+    return {"busy": busy, "game_epoch": game_epoch}
 
 
 @router.get("/robot/best-move")

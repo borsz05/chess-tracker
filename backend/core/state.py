@@ -42,6 +42,11 @@ class BackendState:
         self.game = Game(self.settings.start_fen)
         self.robot_busy: bool = False
 
+        # Minden new_game()-nél nő. A vision folyamat ezt figyeli (a robot-busy
+        # lekérdezésre ülve), mert máskülönben nem tudna róla, ha a weben új
+        # partit indítottak — a saját trackere a régi álláson maradna.
+        self.game_epoch: int = 0
+
         self.robot_service = None
         if self.settings.robot_enabled:
             self._try_init_robot()
@@ -209,6 +214,7 @@ class BackendState:
     def new_game(self, fen: str | None = None) -> dict:
         with self._lock:
             self.game = Game(fen or self.settings.start_fen)
+            self.game_epoch += 1
 
         if self.robot_service is not None:
             self.robot_service.reset_graveyard()
