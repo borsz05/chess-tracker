@@ -179,7 +179,15 @@ class LatestFrameCamera:
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # NINCS CAP_PROP_BUFFERSIZE=1, és ne is tedd vissza. Mérve ezen a
+        # kamerán (1080p MJPG, háromszor váltogatva, azonos fényerő mellett):
+        #     BUFFERSIZE=1 -> 8,3 fps   |   alapértelmezett puffer -> 16,6 fps
+        # Pontosan a fele: egyetlen pufferrel a driver nem tudja a következő
+        # képkockát sorba állítani, amíg az előzőt kiolvassuk, így minden
+        # második kimarad. A KÉPKOCKA FRISSESSÉGÉT nem ez adja, hanem az alábbi
+        # olvasószál: folyamatosan üríti a kamerát, és mindig csak a legfrissebb
+        # képkockát tartja meg (_latest_frame), a többit eldobja.
 
         self._lock = threading.Lock()
         self._latest_frame = None
