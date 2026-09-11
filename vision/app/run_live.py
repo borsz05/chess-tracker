@@ -773,6 +773,13 @@ def main():
 
     app_cfg = AppConfig()
     live_cfg = LiveConfig()
+    if "--no-preview" in sys.argv:
+        # Fej nélküli mód. A felismerés a worker szálon változatlanul fut, csak a
+        # megjelenítés marad el: nincs OpenCV-ablak, nincs képkocka-másolás és
+        # nincs kirajzolás a fő ciklusban. Cserébe a billentyűparancsok (q / r /
+        # d) sem működnek — leállítás Ctrl+C-vel, ami ugyanúgy kimenti az
+        # időzítési adatokat.
+        live_cfg.show_preview = False
 
     camera = LatestFrameCamera(
         camera_index=live_cfg.camera_index,
@@ -806,6 +813,12 @@ def main():
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     try:
+        if not live_cfg.show_preview:
+            logger.info("Előnézet KIKAPCSOLVA (--no-preview): nincs ablak és nincsenek "
+                        "billentyűparancsok. Leállítás: Ctrl+C.")
+            while True:
+                time.sleep(0.5)
+
         while True:
             frame, seq = camera.get_latest()
             if frame is None:
@@ -813,10 +826,6 @@ def main():
                 continue
 
             state = processor.snapshot()
-
-            if not live_cfg.show_preview:
-                time.sleep(0.01)
-                continue
 
             if live_cfg.show_status_overlay:
                 lines = build_overlay_lines(
@@ -850,6 +859,8 @@ def main():
                 else:
                     logger.info("Tábla újradetektálása kérve (a lépéstörténet megmarad).")
                     watchdog.request_redetect()
+    except KeyboardInterrupt:
+        logger.info("Megszakítva (Ctrl+C) — leállítás.")
     finally:
         if watchdog is not None:
             watchdog.stop()

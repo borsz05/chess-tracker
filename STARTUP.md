@@ -224,6 +224,7 @@ kivéve hogy a kalibráláskor a robot stub módban fut
 | Robot (szimuláció) | `./run.sh sim` | C. mód |
 | Kalibrálás | `python -m robot.calibrate` | B. és C. mód |
 | Vision (robot nélkül) | `python -m vision.app.run_live --no-robot` | A. mód |
+| Vision előnézet nélkül | `python -m vision.app.run_live --no-robot --no-preview` | ha kell a CPU |
 | Vision (robottal) | `python -m vision.app.run_live` | B. mód |
 | Frontend | `python -m tools.serve_frontend` | mindegyik |
 
@@ -238,4 +239,5 @@ kivéve hogy a kalibráláskor a robot stub módban fut
 | `Robot executor nem elérhető` | nincs futó executor | indítsd el a `./run.sh`-t |
 | `detect-failed` az előnézeti ablakban | nem találja a tábla sarkait | helyezd a táblát a kamera látóterébe, A1 legyen bal felül |
 | `init-too-far` az előnézeti ablakban | a bábuk nincsenek kezdőpozícióban | állítsd fel a bábokat, vagy nyomj `r`-t |
+| a gép belassul, akadozik a weboldal | a vision előnézeti ablaka is CPU-t eszik | indítsd `--no-preview`-vel (nincs ablak és nincs `q`/`r`/`d` billentyű; leállítás Ctrl+C-vel, az időzítési adatok úgy is kimentődnek) |
 | a frontend a régi kódot mutatja | a böngésző gyorsítótárazta az ES-modulokat | `python -m tools.serve_frontend` (no-store fejlécekkel indul) — a `python -m http.server` erre nem alkalmas |
