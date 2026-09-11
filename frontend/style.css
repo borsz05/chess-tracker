@@ -150,6 +150,8 @@ h1, h2, h3 {
 
 /* ── JOBB OSZLOP: LEBEGŐ CÍM + PANEL ──────────────────────── */
 .analysis-column {
+  /* A .status-notes ehhez képest lóg le a panel alá. */
+  position: relative;
   flex: 0 0 480px;
   width: 480px;
   max-width: 480px;
@@ -613,17 +615,37 @@ h1, h2, h3 {
   color: var(--text-main);
 }
 
-/* A kibontott rész: csak baj esetén. */
+/* A jelzések FIX HELYE: a panel ALATT, a lap hátterén — nem a sidebaron
+   belül. Abszolút pozicionált, tehát NEM foglal helyet az oszlopban: a
+   panel végig teljes magasságú marad, és a jegyzetek megjelenése semmit
+   nem tol el. Ha nincs mit mondani, egyetlen pixel sem látszik belőle.
+   A két jegyzet egymás MELLETT fér el (sakk + kapcsolati hiba egyszerre). */
+.status-notes {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding-top: 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* A kibontott rész: csak baj esetén. Szándékosan apró — ezek ritka,
+   kiegészítő jelzések, nem ők a státuszsáv főszereplői. */
 .status-note {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: 4px;
+  padding: 1px 6px;
   border-radius: 999px;
-  font-size: 0.86rem;
+  font-size: 0.62rem;
+  line-height: 1;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
   border: 1px solid transparent;
 }
 

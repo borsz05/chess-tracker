@@ -27,9 +27,12 @@ function connectionText(connectionState) {
 }
 
 /**
- * A jegyzet (a sor kibontott része) csak akkor jelenik meg, ha van mit
- * mondani: sakk vagy futó elemzés. Normál menetben az egész
- * állapot EGY sor: „33. lépés · Fehér következik".
+ * A jegyzet csak akkor mond valamit, ha BAJ van — jelenleg: sakk.
+ *
+ * A futó elemzés SZÁNDÉKOSAN nincs kijelezve. A motorvonalak a panel
+ * tetején végig ott vannak, csak az értékük frissül, tehát az „Elemzés…"
+ * nem mondott semmit, amit ne lehetne látni — viszont minden egyes lépés
+ * után megjelent ~2 másodpercre, és ez okozta a státuszsáv ugrálását.
  */
 function statusNote(state, finished) {
   const status = state?.status || {};
@@ -40,9 +43,6 @@ function statusNote(state, finished) {
 
   if (status.is_check) {
     return { text: "Sakk!", kind: "note-alert" };
-  }
-  if (state?.analysis_pending) {
-    return { text: "Elemzés…", kind: "note-info" };
   }
   return null;
 }
