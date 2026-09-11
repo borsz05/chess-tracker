@@ -1,0 +1,19 @@
+# Lefedettségmérés a sakk-rendszerhez.
+#
+# A backend és a vision KÜLÖN folyamat, ezért parallel módban futnak: mindkettő
+# saját .coverage.<gép>.<pid> fájlt ír, amiket a `coverage combine` fűz össze.
+[run]
+parallel = true
+source =
+    backend
+    vision
+    chess_logic
+omit =
+    */.venv/*
+    */site-packages/*
+    */__pycache__/*
+
+[report]
+# A sosem futott sorokat így soronként is ki lehet listázni.
+show_missing = true
+skip_empty = true

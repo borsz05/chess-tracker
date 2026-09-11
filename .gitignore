@@ -9,3 +9,8 @@ data/
 timing_output/dashboard.html
 data_fen/
 *.onnx
+
+# coverage.py mérési adatok és riportok
+.coverage
+.coverage.*
+htmlcov/
