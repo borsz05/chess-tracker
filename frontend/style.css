@@ -638,26 +638,28 @@ h1, h2, h3 {
   top: 100%;
   left: 0;
   right: 0;
-  padding-top: 9px;
+  padding-top: 12px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
 }
 
-/* A kibontott rész: csak baj esetén. Szándékosan apró — ezek ritka,
-   kiegészítő jelzések, nem ők a státuszsáv főszereplői. */
+/* Csak baj esetén jelenik meg. Amíg a státuszsávon BELÜL ült, muszáj volt
+   aprónak lennie, mert minden pixele a lépéslistából ment el; mióta a panel
+   alatt, abszolút pozícióban van, nem tol el semmit — ezért itt már ugyanaz
+   a szellős ritmus megy, mint a panel többi elemén. */
 .status-note {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
+  gap: 8px;
+  padding: 8px 16px;
   border-radius: 999px;
-  font-size: 0.62rem;
-  line-height: 1;
+  font-size: 0.80rem;
+  line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
   border: 1px solid transparent;
 }
