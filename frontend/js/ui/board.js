@@ -152,6 +152,47 @@ function squareCenter(square, orientation) {
 
 let lastSuggestionUci = null;
 
+/* A nyíl méretezése a lichess chessgroundból (src/svg.ts). Ott a viewBox
+   egysége EGY mező, itt a tábla 0..100, tehát egy mező 12.5 — minden
+   chessground-érték ezzel szorzódik.
+
+   chessground:  stroke-width = lineWidth / 64        (lineWidth alapból 10)
+                 arrowMargin  = (shorten ? 20 : 10) / 64
+   A margó a CÉLNÁL rövidíti a vonalat; a `shorten` akkor igaz, ha a
+   célmezőn áll bábu — így a nyílhegy megáll a bábu előtt, nem takarja el. */
+const SQUARE_UNITS = 12.5;
+const ARROW_MARGIN_OCCUPIED = (20 / 64) * SQUARE_UNITS;
+const ARROW_MARGIN_EMPTY = (10 / 64) * SQUARE_UNITS;
+
+/* A nyílhegy chessground-marker: a path és a marker méretei szó szerint
+   onnan valók (markerWidth/Height 4, refX 2.05, refY 2, "M0,0 V4 L3,2 Z").
+   markerUnits alapból "strokeWidth", ezért a hegy a szárral együtt nő. */
+function buildArrowHeadDefs() {
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const marker = document.createElementNS(SVG_NS, "marker");
+
+  marker.setAttribute("id", "suggestion-arrowhead");
+  marker.setAttribute("orient", "auto");
+  marker.setAttribute("markerWidth", "4");
+  marker.setAttribute("markerHeight", "4");
+  marker.setAttribute("refX", "2.05");
+  marker.setAttribute("refY", "2");
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("class", "suggestion-head");
+  path.setAttribute("d", "M0,0 V4 L3,2 Z");
+
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  return defs;
+}
+
+function isSquareOccupied(square) {
+  if (!board) return false;
+  const position = board.position();
+  return !!(position && position[square]);
+}
+
 export function drawSuggestionArrow(uci) {
   const svg = document.getElementById("board-arrow");
   if (!svg) return;
@@ -162,49 +203,31 @@ export function drawSuggestionArrow(uci) {
   if (!lastSuggestionUci || !board) return;
 
   const orientation = board.orientation();
-  const from = squareCenter(lastSuggestionUci.slice(0, 2), orientation);
-  const to = squareCenter(lastSuggestionUci.slice(2, 4), orientation);
+  const fromSquare = lastSuggestionUci.slice(0, 2);
+  const toSquare = lastSuggestionUci.slice(2, 4);
+  const from = squareCenter(fromSquare, orientation);
+  const to = squareCenter(toSquare, orientation);
   if (!from || !to) return;
 
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 0.001) return;
+  if (Math.hypot(dx, dy) < 0.001) return;
 
-  const ux = dx / len;
-  const uy = dy / len;
-
-  // A nyíl a célmező széléig ér, nem a közepéig — a bábu így nem tűnik el
-  // alatta. A hegy hossza a mezőméret negyede.
-  const head = 3.6;
-  const gap = 3.0;
-  const tipX = to.x - ux * gap;
-  const tipY = to.y - uy * gap;
-  const baseX = tipX - ux * head;
-  const baseY = tipY - uy * head;
-  const startX = from.x + ux * gap;
-  const startY = from.y + uy * gap;
+  const angle = Math.atan2(dy, dx);
+  const margin = isSquareOccupied(toSquare)
+    ? ARROW_MARGIN_OCCUPIED
+    : ARROW_MARGIN_EMPTY;
 
   const shaft = document.createElementNS(SVG_NS, "line");
   shaft.setAttribute("class", "suggestion");
-  shaft.setAttribute("x1", startX.toFixed(2));
-  shaft.setAttribute("y1", startY.toFixed(2));
-  shaft.setAttribute("x2", baseX.toFixed(2));
-  shaft.setAttribute("y2", baseY.toFixed(2));
+  shaft.setAttribute("x1", from.x.toFixed(2));
+  shaft.setAttribute("y1", from.y.toFixed(2));
+  shaft.setAttribute("x2", (to.x - Math.cos(angle) * margin).toFixed(2));
+  shaft.setAttribute("y2", (to.y - Math.sin(angle) * margin).toFixed(2));
+  shaft.setAttribute("marker-end", "url(#suggestion-arrowhead)");
 
-  const half = head * 0.5;
-  const points = [
-    `${tipX.toFixed(2)},${tipY.toFixed(2)}`,
-    `${(baseX - uy * half).toFixed(2)},${(baseY + ux * half).toFixed(2)}`,
-    `${(baseX + uy * half).toFixed(2)},${(baseY - ux * half).toFixed(2)}`,
-  ].join(" ");
-
-  const tip = document.createElementNS(SVG_NS, "polygon");
-  tip.setAttribute("class", "suggestion-head");
-  tip.setAttribute("points", points);
-
+  svg.appendChild(buildArrowHeadDefs());
   svg.appendChild(shaft);
-  svg.appendChild(tip);
 }
 
 /**

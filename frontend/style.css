@@ -1,10 +1,16 @@
 /* ============================================================
-   SAKK ELEMZŐ — Krém / Mélyzöld / Terrakotta paletta (3. paletta)
+   SAKK ELEMZŐ — Bézs / Barna / Grafit paletta (4. paletta)
 
-     #E3DCD2  krém        — világos mező, panelfelület
-     #013328  mélyzöld    — sötét mező, gombok, szöveg-akcentus
-     #CC8B65  terrakotta  — AKCENTUS: utolsó lépés, motor javaslata
-     #100C0D  közel-fekete— szöveg
+   Az EGÉSZ oldal a tábla színeiből épül fel. Az akcentus maguknak a
+   FEKETE BÁBUKNAK a színe: a bk.png alfa-súlyozott átlaga (#3F3A38,
+   medián #413A37) — így az eval-sáv sötét fele és a gombok pontosan
+   olyanok, mint a bábuk a táblán.
+
+     #EDD6B0  világos bézs  — világos mező, panelfelület alapja
+     #B88762  barna         — sötét mező, mélyebb felületek
+     #F6EB72  citromsárga   — utolsó lépés VILÁGOS mezőn
+     #DCC34B  mustársárga   — utolsó lépés SÖTÉT mezőn + panel-akcentus
+     #3F3A38  grafit        — gombok, eval-sáv, szöveg-akcentus
 
    Tipográfia: Montserrat végig (ez a chess.com betűtípusa is) — egy család,
    súlyokkal tagolva: 800 a cím, 700 a kiemelés, 500-600 a szöveg.
@@ -22,44 +28,62 @@ body {
 
 /* ── CSS VÁLTOZÓK ─────────────────────────────────────────── */
 :root {
-  /* A háttér egy árnyalattal mélyebb a krémnél, hogy a világos mező és a
-     panel elváljon tőle — így nincs szükség árnyékra a mélységhez. */
-  --bg-app:     #D9D0C4;
+  /* A háttér egy árnyalattal mélyebb a bézsnél, hogy a világos mező és a
+     panel elváljon tőle — így nincs szükség árnyékra a mélységhez. A
+     felületek mind a tábla két alapszíne KÖZÖTT mozognak. */
+  --bg-app:     #DAC7A8;
   --bg-board:   var(--bg-app);
-  --panel-bg:   #EDE7DE;
-  --panel-bg-2: #E3DCD2;
-  --surface-1:  #D8CFC3;
-  --surface-2:  #C9BFB1;
-  --surface-3:  #B8ACA0;
+  --panel-bg:   #F3E6CE;
+  --panel-bg-2: #EADCC0;
+  --surface-1:  #E3D2B4;
+  --surface-2:  #CDB690;
+  --surface-3:  #B89C74;
 
-  --panel-border:      rgba(1, 51, 40, 0.20);
-  --panel-border-soft: rgba(1, 51, 40, 0.10);
+  /* A vonalak az akcentusból jönnek, nem semleges szürkéből — így a
+     panel és a tábla ugyanahhoz a családhoz tartozik. */
+  --panel-border:      rgba(63, 58, 56, 0.24);
+  --panel-border-soft: rgba(63, 58, 56, 0.12);
   --line: 1px solid var(--panel-border);
 
-  --text-main:  #100C0D;
-  --text-soft:  #2A2422;
-  --text-dim:   #7A6E66;
-  --text-label: #013328;
+  --text-main:  #1C1917;
+  --text-soft:  #35302D;
+  --text-dim:   #8A7B61;
+  --text-label: #3F3A38;
 
-  --accent:           #013328;
-  --accent-dark:      #012019;
-  --accent-mid:       #024A3A;
-  --accent-light:     #0A6650;
+  /* Grafit — a fekete bábuk átlagszíne. Gombok, eval-sáv sötét fele,
+     szöveg-akcentus. A -dark/-mid/-light ugyanennek a sötétítése,
+     illetve világosítása. */
+  --accent:           #3F3A38;
+  --accent-dark:      #2B2726;
+  --accent-mid:       #57504D;
+  --accent-light:     #6E6662;
 
-  /* Terrakotta: az utolsó lépés és a motor javaslata. */
-  --accent-warm:      #CC8B65;
-  --accent-warm-dark: #B0714C;
-  --accent-warm-soft: rgba(204, 139, 101, 0.22);
+  /* A meleg akcentus mostantól a tábla MUSTÁRSÁRGÁJA (--highlight-dark).
+     Így a lépéslistában kiemelt utolsó lépés ugyanazt a színt viseli,
+     mint a táblán kiemelt két mező — a panel és a tábla egy nyelvet beszél.
+     A -dark változat sötétebb, mert a világos panelen szövegszín is. */
+  --accent-warm:      #DCC34B;
+  --accent-warm-dark: #7A6010;
+  --accent-warm-soft: rgba(220, 195, 75, 0.30);
 
-  --eval-white: #EDE7DE;
-  --eval-black: #013328;
+  --eval-white: #F3E6CE;
+  --eval-black: #3F3A38;
+
+  /* A tábla mezői. */
+  --board-light: #EDD6B0;   /* világos bézs */
+  --board-dark:  #B88762;   /* barna */
 
   /* Az utolsó lépés két mezőjének színe (világos, illetve sötét mezőn). */
-  /* --highlight-light: #F5F682; */
-  --highlight-light: #DCB69D;
+  --highlight-light: #F6EB72;   /* világos citromsárga */
+  --highlight-dark:  #DCC34B;   /* mustársárga */
 
-  /* --highlight-dark:  #B9CA43; */
-  --highlight-dark:  #CC8B65;
+  /* A motor javaslatának nyila. A geometria a lichess chessgroundból jön,
+     a szín és az áttetszőség innen állítható. */
+  --arrow-color:   #47C1F9;
+  --arrow-opacity: 0.64;
+  /* Vonalvastagság a chessground képlete szerint: lineWidth/64 mezőnyi.
+     A mi viewBoxunkban 1 mező = 12.5, tehát 10/64 * 12.5 = 1.953. */
+  --arrow-width:   1.953;
 
 
   --radius-xl: 10px;
@@ -229,13 +253,13 @@ h1, h2, h3 {
 }
 
 .white-1e1d7 {
-  background-color: #E3DCD2 !important;
-  color: #013328 !important;
+  background-color: var(--board-light) !important;
+  color: var(--board-dark) !important;
 }
 
 .black-3c85d {
-  background-color: #013328 !important;
-  color: #E3DCD2 !important;
+  background-color: var(--board-dark) !important;
+  color: var(--board-light) !important;
 }
 
 /* Az utolsó lépés két mezője — a chessboard.js hivatalos mintája szerint
@@ -250,8 +274,8 @@ h1, h2, h3 {
 
 #board .black-3c85d.highlight-last-move {
   background-color: var(--highlight-dark) !important;
-  /* A sötét mező koordinátája krém — a világos kiemelésen olvashatatlan. */
-  color: var(--text-main) !important;
+  /* A sötét mező koordinátája világos — a mustársárga kiemelésen olvashatatlan. */
+  color: var(--board-dark) !important;
 }
 
 /* A motor javaslata: halvány nyíl a tábla fölött. */
@@ -265,18 +289,23 @@ h1, h2, h3 {
   overflow: visible;
 }
 
+/* A nyíl geometriája a lichess chessgroundból (src/svg.ts, renderArrow):
+   kerek végű vonal + `marker-end` nyílhegy. A hegy azért marker, mert a
+   markerUnits alapból "strokeWidth", tehát a hegy MAGÁTÓL együtt méreteződik
+   a szárral — és mivel a marker a vonal rajzolásának a része, az `opacity`
+   az egészre EGYSZER hat. A régi megoldásban a szár és a külön poligon-hegy
+   külön kapott áttetszőséget, ezért az átfedésüknél sötétebb folt látszott. */
 #board-arrow .suggestion {
-  stroke: var(--accent-warm);
-  stroke-width: 1.5;
+  stroke: var(--arrow-color);
+  stroke-width: var(--arrow-width);
   stroke-linecap: round;
   fill: none;
-  opacity: 0.62;
+  opacity: var(--arrow-opacity);
 }
 
 #board-arrow .suggestion-head {
-  fill: var(--accent-warm);
+  fill: var(--arrow-color);
   stroke: none;
-  opacity: 0.62;
 }
 
 /* ── JOBB OLDALI PANEL ────────────────────────────────────── */
@@ -310,20 +339,20 @@ h1, h2, h3 {
 
 .game-over-banner-title {
   font-weight: 800;
-  font-size: 1.18rem;
+  font-size: 1.30rem;
   letter-spacing: 0.01em;
   color: var(--accent-warm);
 }
 
 .game-over-banner-result {
   font-weight: 600;
-  font-size: 1.0rem;
+  font-size: 1.10rem;
   font-variant-numeric: tabular-nums;
 }
 
 .game-over-banner-reason {
   margin-left: auto;
-  font-size: 0.82rem;
+  font-size: 0.90rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
@@ -358,29 +387,29 @@ h1, h2, h3 {
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 8px 14px;
+  padding: 13px 16px;
   overflow: hidden;
   transition: background 0.12s ease;
 }
 
 .top-line:hover {
-  background: rgba(1, 51, 40, 0.07);
+  background: rgba(63, 58, 56, 0.07);
 }
 
 .top-score {
-  min-width: 52px;
+  min-width: 60px;
   text-align: center;
   font-weight: 700;
   border-radius: var(--radius-sm);
-  padding: 4px 6px;
-  font-size: 0.80rem !important;
+  padding: 6px 9px;
+  font-size: 0.92rem !important;
   line-height: 1;
   letter-spacing: 0.02em;
   border: 1px solid var(--panel-border);
 }
 
 .top-score.score-white-lead {
-  background: #F5F0E8;
+  background: #F7EDD9;
   color: var(--accent-dark);
 }
 
@@ -396,7 +425,7 @@ h1, h2, h3 {
 
 /* A legjobb vonal hangsúlyosabb, az alternatívák halkabbak. */
 .top-line.top-line-best .top-move-line {
-  font-size: 0.94rem;
+  font-size: 1.08rem;
   font-weight: 500;
   color: var(--text-main);
 }
@@ -416,8 +445,8 @@ h1, h2, h3 {
   overflow: hidden;
   text-overflow: clip;
   color: var(--text-soft);
-  font-size: 0.86rem;
-  line-height: 1.2;
+  font-size: 1.00rem;
+  line-height: 1.25;
 }
 
 .top-line-expand {
@@ -429,15 +458,32 @@ h1, h2, h3 {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fix fejlec a lista tetejen: nem gordul a lepesekkel, es ures partinal is
+   megnevezi a szekciot, hogy ne egy nevtelen ures folt legyen a panel kozepen. */
+.moves-header {
+  flex: 0 0 auto;
+  padding: 10px 18px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-label);
+  background: var(--panel-bg-2);
+  border-bottom: 1px solid var(--panel-border-soft);
 }
 
 #moves-list {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 0;
   margin: 0;
   list-style: none;
-  font-size: 0.94rem;
+  font-size: 1.08rem;
   scrollbar-width: thin;
   scrollbar-color: var(--surface-2) transparent;
 }
@@ -459,18 +505,22 @@ h1, h2, h3 {
   background: var(--surface-3);
 }
 
-.move-row {
+/* A selectorban azert van benne a `#moves-list li`, mert lentebb egy
+   `#moves-list li { padding: 0 }` reset all (id + elem = nagyobb specificitas),
+   ami kulonben elnyelne az itteni paddingot — a sorok emiatt voltak 21 px
+   magasak akkor is, amikor itt 11 px padding szerepelt. */
+#moves-list li.move-row {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  padding: 11px 16px;
+  padding: 9px 18px;
   box-sizing: border-box;
   transition: background 0.10s ease;
 }
 
 .move-row:nth-child(odd) {
-  background: rgba(1, 51, 40, 0.04);
+  background: rgba(63, 58, 56, 0.05);
 }
 
 .move-row:nth-child(even) {
@@ -478,14 +528,14 @@ h1, h2, h3 {
 }
 
 .move-row:hover {
-  background: rgba(1, 51, 40, 0.09);
+  background: rgba(63, 58, 56, 0.10);
 }
 
 .move-no {
   color: var(--text-dim);
   text-align: right;
   margin-right: 16px;
-  font-size: 0.82rem;
+  font-size: 0.94rem;
   font-weight: 600;
 }
 
@@ -501,14 +551,19 @@ h1, h2, h3 {
   border-radius: 0;
 }
 
+/* Az utolsó lépés sora. A háttér szándékosan alig erősebb a csíkozásnál
+   (0.05 páratlan sor -> 0.07 itt): a sort nem a háttér jelöli ki, hanem a
+   bal szélen futó MUSTÁRSÁRGA sáv — ugyanaz a szín, mint a táblán kiemelt
+   két mezőé, így a panel és a tábla ugyanarra a lépésre mutat. Halk marad,
+   és nem versenyzik a motorvonal szintén mustársárga első lépésével. */
 #moves-list li.last-move {
-  background: var(--accent-warm-soft) !important;
+  background: rgba(63, 58, 56, 0.11) !important;
   border-left: 3px solid var(--accent-warm);
 }
 
 #moves-list li.last-move .move-white,
 #moves-list li.last-move .move-black {
-  color: var(--accent-dark);
+  color: var(--text-main);
   font-weight: 700;
 }
 
@@ -518,7 +573,7 @@ h1, h2, h3 {
    ha van mit mondani. */
 .status-section {
   flex: 0 0 auto;
-  padding: 12px 16px;
+  padding: 18px 18px;
   background: var(--panel-bg-2);
   border-top: var(--line);
   display: flex;
@@ -526,14 +581,22 @@ h1, h2, h3 {
   gap: 14px;
 }
 
+/* A nagyobb betűmérettel a „33. lépés · Fehér következik" nem fér ki a gombok
+   mellé egy sorba (478 px-es panelben ~250 px kellene, ~166 px van), ezért itt
+   SZÁNDÉKOSAN két sor: fölül a lépésszám, alatta a soron következő fél. A
+   pont-elválasztó ilyenkor felesleges, elrejtjük. */
 .status-line {
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 0.92rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-size: 1.06rem;
   color: var(--text-soft);
+}
+
+.status-line .status-sep {
+  display: none;
 }
 
 .status-move-no {
@@ -555,9 +618,9 @@ h1, h2, h3 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
-  font-size: 0.80rem;
+  font-size: 0.86rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -571,7 +634,7 @@ h1, h2, h3 {
 .status-note.note-alert {
   background: var(--accent-warm-soft);
   border-color: var(--accent-warm);
-  color: #8A4A28;
+  color: #6E5712;
 }
 
 .status-note.note-info {
@@ -598,8 +661,8 @@ button {
   background: var(--accent);
   border: 1px solid var(--accent-dark);
   border-radius: var(--radius-md);
-  padding: 9px 18px;
-  font-size: 0.83rem;
+  padding: 12px 22px;
+  font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
