@@ -59,6 +59,13 @@ class LiveConfig:
     # információ). A per-frame költség nem nő, mert a warp így is a fix
     # 1632x1632-re megy (mérve: 1,9 ms mindkét felbontáson); csak az egyszeri
     # board_detect lassul 1242 -> 1801 ms.
+    #
+    # FIGYELEM: az 1,9 ms IZOLÁLT mérés. Élesben a warp p50 ~9 ms, mert a
+    # kamera-szál (MJPG-dekódolás), az ONNX Runtime és az őrszem ugyanazokon a
+    # magokon dolgozik. Abszolút per-komponens időt a
+    # timing_output/<időbélyeg>/components_summary.csv-ből olvass, ne izolált
+    # benchmarkból; a felbontás és a warp-költség FÜGGETLENSÉGE ettől
+    # függetlenül igaz.
     camera_width: int = 1920
     camera_height: int = 1080
     camera_fps: int = 30
@@ -531,25 +538,31 @@ class LiveProcessor:
             if profiler:
                 profiler.record("frame_total", dt_ms)
 
-            # Init completion detection
+            # Init completion detection.
+            #
+            # Az itteni mezőket (_prev_initialized, _init_*_wall,
+            # _move_disturbance_*) képkockánként a worker szál írja, DE a 'r'
+            # billentyű a fő szálról a request_reset -> _reset_runtime_state
+            # úton mindet nullázza — ezért kell rájuk a zár. Blokkonként
+            # EGYSZER vesszük fel, nem mezőnként: így a reset vagy a blokk elé,
+            # vagy mögé esik, nem a közepébe.
             with self._state_lock:
-                prev_init = self._prev_initialized
-            if not prev_init and initialized:
-                init_wall_ms = (t_done - self._init_start_wall) * 1000.0
+                init_just_finished = initialized and not self._prev_initialized
+                if initialized:
+                    self._prev_initialized = True
+                if init_just_finished:
+                    self._init_done_wall = t_done
+                init_start_wall = self._init_start_wall
+
+            if init_just_finished:
                 with self._tracker_lock:
                     istats = self.tracker.init_stats
                 logger.info(
                     "Inicializálás kész! Fal: %.1f ms | Board detect: %s ms | Frames: %d",
-                    init_wall_ms,
+                    (t_done - init_start_wall) * 1000.0,
                     f"{istats['board_detect_ms']:.1f}" if istats and istats.get("board_detect_ms") else "?",
                     istats["frames"] if istats else 0,
                 )
-                with self._state_lock:
-                    self._init_done_wall = t_done
-                    self._prev_initialized = True
-            elif initialized:
-                with self._state_lock:
-                    self._prev_initialized = True
 
             # Move disturbance / end-to-end latency tracking
             if initialized:
@@ -557,6 +570,14 @@ class LiveProcessor:
                 with self._state_lock:
                     disturbance_t0 = self._move_disturbance_t0
                     disturbance_frames = self._move_disturbance_frames
+                    if result.board_changed:
+                        self._move_disturbance_t0 = None
+                        self._move_disturbance_frames = 0
+                    elif disturbance_t0 is not None:
+                        self._move_disturbance_frames += 1
+                    elif result.raw_dist >= threshold:
+                        self._move_disturbance_t0 = t0
+                        self._move_disturbance_frames = 1
 
                 if result.board_changed:
                     if disturbance_t0 is not None:
@@ -583,16 +604,6 @@ class LiveProcessor:
                         "frames_to_detect": disturbance_frames,
                         "mode": result.mode or "",
                     })
-                    with self._state_lock:
-                        self._move_disturbance_t0 = None
-                        self._move_disturbance_frames = 0
-                elif disturbance_t0 is None and result.raw_dist >= threshold:
-                    with self._state_lock:
-                        self._move_disturbance_t0 = t0
-                        self._move_disturbance_frames = 1
-                elif disturbance_t0 is not None:
-                    with self._state_lock:
-                        self._move_disturbance_frames += 1
 
             do_auto_reset = self._store_result(seq, result, initialized, dt_ms)
 

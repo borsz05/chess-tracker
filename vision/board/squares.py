@@ -8,15 +8,14 @@ def _to_int(x):
 def build_9_lines(best_lines):
     """
     best_lines: 7 belső vonal (np.array)
-    visszaad: 9 határvonal (külsőkkel együtt)
+    visszaad: 9 határvonal (a két külsővel együtt)
     """
     best_lines = np.asarray(best_lines, dtype=np.float32).reshape(-1)
     if len(best_lines) != 7:
         raise ValueError(f"best_lines must have length 7, got {len(best_lines)}")
 
     d = best_lines[1] - best_lines[0]
-    lines9 = np.concatenate([[best_lines[0] - d], best_lines, [best_lines[-1] + d]])
-    return lines9, float(d)
+    return np.concatenate([[best_lines[0] - d], best_lines, [best_lines[-1] + d]])
 
 
 def extract_squares_from_warp(img_warp, best_x, best_y, inner_pad_ratio=0.12):
@@ -32,8 +31,8 @@ def extract_squares_from_warp(img_warp, best_x, best_y, inner_pad_ratio=0.12):
     """
     h, w = img_warp.shape[:2]
 
-    x_lines, _ = build_9_lines(best_x)
-    y_lines, _ = build_9_lines(best_y)
+    x_lines = build_9_lines(best_x)
+    y_lines = build_9_lines(best_y)
 
     bbox_warp = [[None for _ in range(8)] for _ in range(8)]
     centers_warp = [[None for _ in range(8)] for _ in range(8)]

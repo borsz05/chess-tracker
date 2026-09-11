@@ -4,10 +4,6 @@ let board = null;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-export function getBoard() {
-  return board;
-}
-
 export function uciToBoardMove(uci) {
   if (typeof uci !== "string" || uci.length < 4) return null;
 

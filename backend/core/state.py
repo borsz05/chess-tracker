@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
 from typing import Callable, Optional
 
 import chess
@@ -14,26 +13,11 @@ from backend.services.engine_service import AnalysisSnapshot, EngineAnalysisServ
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class BackendStateSettings:
-    start_fen: str
-    stockfish_path: str
-    deep_depth: int
-    deep_multipv: int
-    robot_enabled: bool
-    robot_color: str
-
-
 class BackendState:
     def __init__(self, settings: Settings):
-        self.settings = BackendStateSettings(
-            start_fen=settings.start_fen,
-            stockfish_path=settings.stockfish_path,
-            deep_depth=settings.deep_depth,
-            deep_multipv=settings.deep_multipv,
-            robot_enabled=settings.robot_enabled,
-            robot_color=settings.robot_color,
-        )
+        # Magát a Settings-et tartjuk meg: korábban itt egy BackendStateSettings
+        # dataclass másolta át a hat mezőt, ami semmit nem tett hozzá.
+        self.settings = settings
 
         # All BackendState mutations must be performed under this lock.
         self._lock = threading.Lock()

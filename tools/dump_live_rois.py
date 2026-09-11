@@ -78,7 +78,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def detect_and_warp_color(frame_bgr: np.ndarray, cfg: AppConfig):
-    """Ugyanaz a hívási lánc, mint a ChessVisionTracker._detect_board + _full_classify-ban."""
+    """Ugyanaz a hívási lánc, mint a ChessVisionTracker._detect_board + _full_classify_warp-ban."""
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     det = detect_board_on_frame(gray, cell=cfg.cell, inner_pad_ratio=cfg.inner_pad_ratio)
     if not det.ok:

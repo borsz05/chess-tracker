@@ -63,16 +63,29 @@ def symmetries(grid: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return out
 
 
+# A nyolcelemű szimmetriacsoport inverzei. A forgatások egymás inverzei
+# (rot90 <-> rot270, rot0 és rot180 önmaguké), a tükrözéssel kombinált tagok
+# pedig mind ÖNINVERZEK: a "rotK+flip" kétszer alkalmazva visszaadja az
+# eredetit. Korábban ezt minden híváskor nyolc próbaillesztéssel kerestük meg.
+# A táblát a tests/test_orientation.py mind a nyolc névre ellenőrzi:
+# apply_symmetry(apply_symmetry(g, n), inverse_symmetry(n)) == g.
+_INVERSE_SYMMETRY = {
+    "rot0": "rot0",
+    "rot90": "rot270",
+    "rot180": "rot180",
+    "rot270": "rot90",
+    "rot0+flip": "rot0+flip",
+    "rot90+flip": "rot90+flip",
+    "rot180+flip": "rot180+flip",
+    "rot270+flip": "rot270+flip",
+}
+
+
 def inverse_symmetry(name: str) -> str:
     """Az a szimmetria, amely apply_symmetry(apply_symmetry(g, name), inv) == g-t ad."""
-    if name not in SYMMETRY_NAMES:
+    if name not in _INVERSE_SYMMETRY:
         raise ValueError(f"ismeretlen szimmetria: {name!r}")
-    probe = np.arange(64).reshape(8, 8)
-    moved = apply_symmetry(probe, name)
-    for cand in SYMMETRY_NAMES:
-        if np.array_equal(apply_symmetry(moved, cand), probe):
-            return cand
-    raise AssertionError("nincs inverz")   # a 8 elemű csoportban mindig van
+    return _INVERSE_SYMMETRY[name]
 
 
 def rank_symmetries(

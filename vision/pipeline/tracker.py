@@ -39,7 +39,7 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Iterable
 
 import cv2
@@ -80,7 +80,12 @@ class FrameProcessResult:
 
 
 def raw_to_standard(grid: np.ndarray) -> np.ndarray:
-    # Camera always: top-left = A1, bottom-right = H8
+    """A detektor NYERS rácsa -> standard sakkrács (sor 0 = 8. sor, oszlop 0 = a-vonal).
+
+    A leképezés raw (r, c) -> standard (7 - c, 7 - r): a warpolt kép BAL-FELSŐ
+    mezője H1, bal-alsó A1, jobb-felső H8. (Ugyanez a tools/fen_labels.py
+    fejlécében, ami ennek a függvénynek a numerikus inverzét használja.)
+    """
     grid = np.rot90(grid, 1).copy()
     return np.fliplr(grid).copy()
 
@@ -108,6 +113,13 @@ def disturbance_score(prev_occ: np.ndarray | None, curr_occ: np.ndarray | None) 
 
 
 def compute_square_diffs(prev_warp, curr_warp, bbox_grid):
+    """Négyzetenkénti mean|diff| az előző warphoz képest, csökkenő sorrendben.
+
+    A kivonás cv2.absdiff + cv2.mean párossal megy: egy menet uint8-on a négy
+    numpy-ideiglenes (két int16 cast, kivonás, abs) helyett. Mérve valós warpon
+    (64 mező, 84x84 px): 0,95 -> 0,48 ms, bitre azonos értékekkel. Képkockánként
+    egyszer-kétszer fut (előző + ~100 ms-mal korábbi referencia), ezért számít.
+    """
     diffs = []
     for r in range(8):
         for c in range(8):
@@ -115,10 +127,11 @@ def compute_square_diffs(prev_warp, curr_warp, bbox_grid):
             prev_sq = prev_warp[y0:y1, x0:x1]
             curr_sq = curr_warp[y0:y1, x0:x1]
             if prev_sq.size == 0 or curr_sq.size == 0:
-                diff = 0
+                diff = 0.0
             else:
-                d = np.abs(prev_sq.astype(np.int16) - curr_sq.astype(np.int16))
-                diff = float(np.mean(d))
+                ch = prev_sq.shape[2] if prev_sq.ndim == 3 else 1
+                means = cv2.mean(cv2.absdiff(prev_sq, curr_sq))
+                diff = sum(means[:ch]) / ch
             diffs.append((diff, r, c))
     diffs.sort(reverse=True)
     return diffs
@@ -201,7 +214,6 @@ class ChessVisionTracker:
         self.init_conf_grids: list[np.ndarray] = []
         self.initialized = False
         self.init_alignment: str = IDENTITY
-        self.init_dist: int = 0
 
         # frame cache (részleges újraklasszifikáláshoz és a mozgás-jelhez)
         self.prev_warp = None
@@ -228,7 +240,6 @@ class ChessVisionTracker:
 
         # elfogadási politika állapota
         self._pending_promotion: tuple[str, float] | None = None
-        self.last_accept_info: dict | None = None
 
         # Init phase timing (perf_counter-based, ms)
         self._init_start: float | None = None
@@ -315,10 +326,6 @@ class ChessVisionTracker:
     def _full_classify_warp(self, img_warp: np.ndarray) -> BatchClassificationResult:
         with self._profile("classifier_full"):
             return classify_warp_squares_batch(img_warp, self.det.bbox_warp, self.occ_model, context=self.cfg.context)
-
-    def _full_classify(self, frame_bgr: np.ndarray) -> BatchClassificationResult:
-        with self._profile("classifier_full"):
-            return classify_frame_batch(frame_bgr, self.det, self.cfg.warp_size, self.occ_model, context=self.cfg.context)
 
     def _rolling_squares(self) -> list[tuple[int, int]]:
         n = int(self.cfg.rolling_refresh_squares)
@@ -533,7 +540,7 @@ class ChessVisionTracker:
         self.init_label_grids.clear()
         self.init_conf_grids.clear()
 
-    def _store_init_baseline(self, frame_bgr: np.ndarray, cls, init_labels_std, init_confs_std, now: float):
+    def _store_init_baseline(self, img_warp: np.ndarray, cls, init_labels_std, init_confs_std, now: float):
         self.accepted_occ = init_labels_std.copy()
         self.observed_occ = init_labels_std.copy()
         self.last_std_occ = init_labels_std.copy()
@@ -541,7 +548,6 @@ class ChessVisionTracker:
         self.stabilizer.update(init_labels_std.tolist(), init_confs_std.tolist(), now_s=now, motion=None)
         self.initialized = True
 
-        img_warp = cv2.warpPerspective(frame_bgr, self.det.M, self.cfg.warp_size, flags=cv2.WARP_INVERSE_MAP)
         self.frame_counter = 0
         self._update_frame_cache(img_warp, cls, now)
 
@@ -562,13 +568,17 @@ class ChessVisionTracker:
             self.det = det
             # Orientáció-igazítás az induló álláshoz (csak forgatások — az
             # alapállás bal-jobb tükrözésre szimmetrikus, azt nem döntjük el).
-            cls0 = self._full_classify(frame_bgr)
-            self.init_alignment = self._align(self.det, cls0.labels, self.expected_start_occ)
+            img_warp = self._warp_frame(frame_bgr)
+            cls = self._full_classify_warp(img_warp)
+            self.init_alignment = self._align(self.det, cls.labels, self.expected_start_occ)
             if self.init_alignment != IDENTITY:
-                cls0 = self._full_classify(frame_bgr)
-            cls = cls0
+                # Az igazítás CSAK a bbox/centers rácsokat rendezte át, a
+                # homográfiát (det.M) nem — ugyanez a warp az új rácsokkal
+                # már a helyes címkéket adja, nem kell újra warpolni.
+                cls = self._full_classify_warp(img_warp)
         else:
-            cls = self._full_classify(frame_bgr)
+            img_warp = self._warp_frame(frame_bgr)
+            cls = self._full_classify_warp(img_warp)
 
         self.init_label_grids.append(cls.labels)
         self.init_conf_grids.append(cls.confs)
@@ -586,9 +596,8 @@ class ChessVisionTracker:
             self._reset_init_buffers()
             return self._init_result(f"init-too-far dist={init_dist}", raw_labels=cls.labels)
 
-        self._store_init_baseline(frame_bgr, cls, init_labels, init_confs, now)
+        self._store_init_baseline(img_warp, cls, init_labels, init_confs, now)
         confs_std = raw_to_standard(cls.confs)
-        self.init_dist = init_dist
         if init_dist > 0:
             # A megfigyelt tábla eltér a várt kezdőállástól (init_max_dist-en
             # belül). A resolver a Game állásához képest keres lépést, ezért egy
@@ -728,7 +737,7 @@ class ChessVisionTracker:
         self.stabilizer.set_reference(self.accepted_occ.tolist())
         self._unsettled_since = None
 
-        self.last_accept_info = {
+        accept_info = {
             "t_accept": now,
             "candidate_since": decision.candidate_since,
             "last_motion_t": decision.last_motion_t,
@@ -740,5 +749,5 @@ class ChessVisionTracker:
         return self._make_result(
             initialized=True, board_changed=True, raw_labels=raw_labels, confs_std=confs_std,
             san=san, uci=best_uci, mode=resolve_result.mode or "exact", raw_dist=raw_dist, obs_mean=obs_mean,
-            reason=decision.reason, motion=motion, accept_info=dict(self.last_accept_info),
+            reason=decision.reason, motion=motion, accept_info=accept_info,
         )

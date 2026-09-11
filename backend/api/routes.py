@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from pydantic import BaseModel
 
 from backend.core.state import BackendState
@@ -85,7 +85,7 @@ async def websocket_state(websocket: WebSocket):
             msg = await websocket.receive_text()
             if msg == "ping":
                 await websocket.send_json({"type": "pong"})
-    except WebSocketDisconnect:
-        await ws_hub.disconnect(websocket)
     except Exception:
+        # A szokásos eset a WebSocketDisconnect (az is Exception), de bármi
+        # okból szakad meg a kapcsolat, a hubból ki kell venni.
         await ws_hub.disconnect(websocket)

@@ -5,7 +5,7 @@ import torch
 
 from vision.models.occupancy_color_model import OccupancyColorModel
 from vision.models.square_net import MultiTaskSquareNet, PIECE_TYPE_CLASSES, make_checkpoint
-from vision.pipeline.batch_classifier import classify_selected_squares, classify_warp_squares_batch
+from vision.pipeline.batch_classifier import classify_squares_batch, classify_warp_squares_batch
 
 NORM = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
 
@@ -44,9 +44,9 @@ def test_full_and_partial_paths_agree_across_backends(models):
     assert set(np.unique(a.labels)).issubset({0, 1, 2})
 
     squares = [(0, 0), (3, 4), (7, 7), (5, 1)]
-    part = classify_selected_squares(warp, grid, squares, onnx_m, context=0.5)
-    assert set(part) == set(squares)
-    for (r, c), (lab, conf) in part.items():
-        assert lab == a.labels[r, c]
-        assert abs(conf - a.confs[r, c]) < 1e-5
-    assert classify_selected_squares(warp, grid, [], onnx_m) == {}
+    part = classify_squares_batch(warp, grid, squares, onnx_m, context=0.5)
+    assert part.positions == squares
+    for i, (r, c) in enumerate(part.positions):
+        assert int(part.labels[i]) == a.labels[r, c]
+        assert abs(float(part.confs[i]) - a.confs[r, c]) < 1e-5
+    assert classify_squares_batch(warp, grid, [], onnx_m).positions == []

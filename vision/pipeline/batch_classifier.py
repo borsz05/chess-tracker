@@ -132,9 +132,6 @@ class SquareBatchResult:
     confs: np.ndarray                  # (N,) float32
     type_probs: np.ndarray | None      # (N, n_type) vagy None legacy modellnél
 
-    def as_dict(self) -> dict[tuple[int, int], tuple[int, float]]:
-        return {(r, c): (int(self.labels[i]), float(self.confs[i])) for i, (r, c) in enumerate(self.positions)}
-
 
 def classify_squares_batch(
     img_warp: np.ndarray,
@@ -153,18 +150,3 @@ def classify_squares_batch(
         return SquareBatchResult([], np.zeros((0,), np.int32), np.zeros((0,), np.float32), None)
     pred = model.predict_rois(rois)
     return SquareBatchResult(positions, pred.labels.astype(np.int32), pred.confs.astype(np.float32), pred.type_probs)
-
-
-def classify_selected_squares(
-    img_warp: np.ndarray,
-    bbox_grid: BBoxGrid,
-    squares: list[tuple[int, int]],
-    model: OccupancyColorModel,
-    *,
-    context: float = 0.50,
-) -> dict[tuple[int, int], tuple[int, float]]:
-    """
-    Csak bizonyos mezőket klasszifikál. squares: [(r,c),...]
-    (Kompatibilitási wrapper: {(r,c): (label, conf)}.)
-    """
-    return classify_squares_batch(img_warp, bbox_grid, squares, model, context=context).as_dict()
