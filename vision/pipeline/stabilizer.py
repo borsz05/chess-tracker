@@ -193,11 +193,6 @@ class StateStabilizer:
         return self._reference
 
     @property
-    def last_emitted(self) -> OccGrid | None:
-        """Kompatibilitás: a referencia (a régi API 'utoljára kiadott' rácsa)."""
-        return self._reference
-
-    @property
     def candidate(self) -> OccGrid | None:
         return self._candidate
 

@@ -39,9 +39,6 @@ class PipelineProfiler:
     def record(self, name: str, ms: float) -> None:
         self._samples[name].append(float(ms))
 
-    def get_samples(self, name: str) -> list[float]:
-        return list(self._samples.get(name, []))
-
     # ------------------------------------------------------------------ #
     # Statistics                                                           #
     # ------------------------------------------------------------------ #

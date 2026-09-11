@@ -87,14 +87,6 @@ class Game:
 
         return self._apply_chess_move(ch_move)
 
-    def apply_move(self, move: MoveGuess) -> bool:
-        try:
-            ch_move = chess.Move.from_uci(move.to_uci())
-        except Exception:
-            return False
-
-        return self._apply_chess_move(ch_move) is not None
-
     def _normalized_result(self, result: str | None) -> str:
         if result is None:
             result = self.result

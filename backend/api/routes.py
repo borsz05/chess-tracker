@@ -18,10 +18,6 @@ def get_backend_state(request: Request) -> BackendState:
     return backend_state
 
 
-def get_ws_hub(request: Request) -> WebSocketHub:
-    return request.app.state.ws_hub
-
-
 @router.get("/health")
 def health():
     return {"ok": True}

@@ -41,19 +41,6 @@ def pruneSaddle(s):
         thresh *= 2
         s[s < thresh] = 0
 
-def getMinSaddleDist(saddle_pts, pt):
-    best_dist = None
-    best_pt = pt
-
-    for saddle_pt in saddle_pts:
-        saddle_pt = saddle_pt[::-1]
-        dist = np.sum((saddle_pt - pt) ** 2)
-        if best_dist is None or dist < best_dist:
-            best_dist = dist
-            best_pt = saddle_pt
-
-    return best_pt, np.sqrt(best_dist)
-
 # =========================
 # Contours
 # =========================
@@ -184,7 +171,7 @@ def findGoodPoints(grid, spts, max_px_dist=5):
     if N == 0 or len(spts) == 0:
         return new_grid, grid_good
 
-    # spts: (M, 2) [row, col] -> (x, y), mint a régi getMinSaddleDist [::-1]
+    # spts: (M, 2) [row, col] -> (x, y), ezert a [::-1] tengelycsere
     spts_xy = np.asarray(spts)[:, ::-1].astype(np.float64)
     pts = np.asarray(new_grid[:, :2], dtype=np.float64)
     d2 = (pts[:, 0:1] - spts_xy[None, :, 0]) ** 2 + (pts[:, 1:2] - spts_xy[None, :, 1]) ** 2

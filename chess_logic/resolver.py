@@ -7,12 +7,6 @@ import chess
 from .move_types import MoveGuess
 
 
-def coords_to_chess_square(row: int, col: int) -> int:
-    rank = 7 - row
-    file_ = col
-    return chess.square(file_, rank)
-
-
 def chess_square_to_coords(square: int) -> tuple[int, int]:
     file_ = chess.square_file(square)
     rank = chess.square_rank(square)
@@ -27,11 +21,6 @@ def _promotion_char(piece_type: int) -> str:
         chess.KNIGHT: "n",
     }
     return mapping.get(piece_type, "q")
-
-
-def _fen_key4(board: chess.Board) -> str:
-    parts = board.fen().split()
-    return " ".join(parts[:4])
 
 
 def _as_chess_board(obj: chess.Board | str) -> chess.Board:

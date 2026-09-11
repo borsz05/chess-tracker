@@ -126,6 +126,3 @@ def choose_alignment(
     return IDENTITY, ranking
 
 
-def realign_grid_lists(grids: Sequence, name: str) -> list:
-    """Több (8x8) rács azonos szimmetriával — kényelmi wrapper."""
-    return [apply_symmetry(g, name) for g in grids]
