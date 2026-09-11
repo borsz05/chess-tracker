@@ -3,6 +3,7 @@
 
 Ez a script UGYANAZT a detektálási és kivágási kódutat hívja, amit a
 ChessVisionTracker élesben használ:
+    - MJPG képformátum 1920x1080-on               (ugyanaz a tömörítés!)
     - vision.pipeline.board_detector.detect_board_on_frame  (tábla-detektálás + warp)
     - vision.pipeline.batch_classifier.crop_with_context     (mező kivágása kontextussal)
     - AppConfig (cell / inner_pad_ratio / context / weights_path)
@@ -149,12 +150,23 @@ def main() -> None:
         print(f"Nem sikerült megnyitni a kamerát (index={args.camera_index}).")
         return
 
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    # MJPG a felbontás ELŐTT — pontosan úgy, ahogy a run_live.py állítja.
+    # Enélkül a kamera YUYV-ot ad: TÖMÖRÍTETLEN, és mérve 42%-kal élesebb
+    # képet (Laplace-variancia 358 vs 252), mint amit a modell élesben kap.
+    # Ennek a szerszámnak pont az a dolga, hogy az éles úttal egyezzen, tehát
+    # a képformátumnak is egyeznie kell — különben jobbnak mutatja a modellt,
+    # mint amilyen. (A BUFFERSIZE-t szintén nem állítjuk, ahogy a run_live.py
+    # sem: ott 8,3 vs 16,6 fps a különbség.)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
     cap.set(cv2.CAP_PROP_FPS, args.fps)
 
-    print("Kamera megnyitva.")
+    fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    fmt = "".join(chr((fourcc >> (8 * i)) & 0xFF) for i in range(4))
+    print(f"Kamera megnyitva: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
+          f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}, formátum={fmt} "
+          f"(MJPG kell — ugyanaz, amit a run_live.py használ)")
     print("Space = kép mentése (64 mező, ugyanazzal a kóddal mint élesben) | Q = kilépés")
     print(f"Kimeneti mappa: {args.out_dir.resolve()}")
 
