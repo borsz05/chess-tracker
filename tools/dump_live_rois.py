@@ -9,10 +9,10 @@ ChessVisionTracker élesben használ:
 
 Tehát a mentett képek pontosan azok a ROI-k (a resize/normalizálás ELŐTTI
 állapotban), amiket a modell ténylegesen megkap éles üzemben. A mentés
-konvenciója megegyezik a tools/collect_training_data.py-éval (r{sor}c{oszlop},
-osztály szerinti almappa, alacsony konfidencia esetén "unsure"), így a
-tanítóképek mappája és a live_dump/ mappa egymás mellé nyithatók, és
-mezőnként/osztályonként vizuálisan összevethetők.
+konvenciója (r{sor}c{oszlop}, osztály szerinti almappa, alacsony konfidencia
+esetén "unsure") megegyezik a tanítóhalmazéval, így a tanítóképek mappája és a
+live_dump/ mappa egymás mellé nyithatók, és mezőnként/osztályonként vizuálisan
+összevethetők.
 
 Használat (repo gyökérből):
     python -m tools.dump_live_rois
