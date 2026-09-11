@@ -70,9 +70,7 @@ class MoveRecord:
 
 @dataclass(slots=True)
 class OccupancyResolveResult:
-    applied: bool
     move: MoveGuess | None = None
-    san: str | None = None
     mode: str | None = None
     expected_occ: list[list[int]] | None = None
     # Legális lépések (UCI), amelyeknek a talált lépés a foglaltság szintjén

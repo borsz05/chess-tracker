@@ -3,12 +3,30 @@ from __future__ import annotations
 import chess
 import chess.pgn
 
-from .resolver import chess_move_to_moveguess, prefix_ambiguities, resolve_move_from_occupancy
+from .resolver import (
+    DEFAULT_PROMOTION_MIN_CONF,
+    chess_move_to_moveguess,
+    prefix_ambiguities,
+    resolve_move_from_occupancy,
+)
 from .move_types import MoveGuess, MoveRecord, OccupancyResolveResult
+
+_REPETITION_TERMINATIONS = (
+    chess.Termination.THREEFOLD_REPETITION,
+    chess.Termination.FIVEFOLD_REPETITION,
+)
 
 
 class Board(chess.Board):
-    """Vékony wrapper a python-chess fölött."""
+    """Vékony wrapper a python-chess fölött.
+
+    NINCS saját copy(): korábban volt egy `Board(self.fen())`-t adó felülírás,
+    ami elnyelte a lépéstörténetet (a python-chess copy(*, stack=True)-jével
+    szemben). Emiatt a `_build_record` másolatán az `is_repetition(3)` és a
+    `claim_draw=True`-s `outcome()` sosem látta az ismétlést, tehát a
+    háromszoros ismétlés MINDIG észrevétlen maradt — lásd
+    tests/test_game_repetition.py.
+    """
 
     def __init__(self, fen: str | None = None):
         super().__init__(fen or chess.STARTING_FEN)
@@ -16,9 +34,6 @@ class Board(chess.Board):
     @property
     def side_to_move(self) -> str:
         return "w" if self.turn == chess.WHITE else "b"
-
-    def copy(self) -> "Board":
-        return Board(self.fen())
 
 
 class Game:
@@ -43,6 +58,13 @@ class Game:
 
         outcome = ch_after.outcome(claim_draw=True)
         result_after = outcome.result() if outcome is not None else None
+        # Az ismétlés-jelzőt magából az outcome-ból vesszük (nem külön
+        # is_repetition(3)-mal): a claim_draw=True az ISMÉTELHETŐ állásban zár
+        # le, egy féllépéssel azelőtt, hogy az állás harmadszor a táblán lenne.
+        # Külön számolva a jelző False maradna a lezáró lépésnél, és a felület
+        # "Lezárva"-t írna a "Háromszori ismétlés" helyett. Ez ráadásul ingyen
+        # van: az outcome() úgyis lefuttatta a vizsgálatot.
+        repetition_draw = outcome is not None and outcome.termination in _REPETITION_TERMINATIONS
 
         return MoveRecord(
             ply_index=self._current_ply_index(),
@@ -55,7 +77,7 @@ class Game:
             is_stalemate=ch_after.is_stalemate(),
             result_after_move=result_after,
             is_fifty_move_draw=ch_after.is_fifty_moves(),
-            is_threefold_repetition=ch_after.is_repetition(3),
+            is_threefold_repetition=repetition_draw,
             is_insufficient_material=ch_after.is_insufficient_material(),
         )
 
@@ -157,16 +179,13 @@ class Game:
         max_weighted_cost: float = 1.2,
         min_changed_cells: int = 2,
         type_probs=None,
-        promotion_min_conf: float | None = None,
+        promotion_min_conf: float = DEFAULT_PROMOTION_MIN_CONF,
         use_type_hint_for_moves: bool = False,
     ) -> OccupancyResolveResult:
         """Foglaltság -> legális lépés (lásd resolver.resolve_move_from_occupancy).
         type_probs: a vision típus-fejének 8x8x7 rácsa — egyelőre csak a
         promóciós bábu kiválasztásához; use_type_hint_for_moves a jövőbeli,
         teljes lépésdetektálási használat kapcsolója (alapból ki)."""
-        kwargs = {}
-        if promotion_min_conf is not None:
-            kwargs["promotion_min_conf"] = promotion_min_conf
         move, expected_occ, mode = resolve_move_from_occupancy(
             self.board,
             new_occ,
@@ -175,23 +194,19 @@ class Game:
             max_weighted_cost=max_weighted_cost,
             min_changed_cells=min_changed_cells,
             type_probs=type_probs,
+            promotion_min_conf=promotion_min_conf,
             use_type_hint_for_moves=use_type_hint_for_moves,
-            **kwargs,
         )
 
         if move is None:
             return OccupancyResolveResult(
-                applied=False,
                 move=None,
-                san=None,
                 mode="no-legal-fit",
                 expected_occ=None,
             )
 
         return OccupancyResolveResult(
-            applied=False,
             move=move,
-            san=None,
             mode=mode or "exact",
             expected_occ=expected_occ,
             ambiguous_with=prefix_ambiguities(self.board, move.to_uci()),
