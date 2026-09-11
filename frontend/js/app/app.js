@@ -1,4 +1,4 @@
-import { fetchState, postMove, postNewGame } from "../api/api.js";
+import { fetchState, postNewGame } from "../api/api.js";
 import { StateSocket } from "../api/socket.js";
 import { getCurrentState, getConnectionState, setConnectionState, setCurrentState } from "./state.js";
 import {
@@ -15,7 +15,6 @@ import { updateStatusUI } from "../ui/status.js";
 import { buildTopLinesViewModel, updateTopLinesUI } from "../ui/toplines.js";
 import { showToast } from "../ui/toast.js";
 import { getEl, setText } from "../utils/dom.js";
-import { isGameFinished } from "../utils/game.js";
 
 let stateSocket = null;
 
@@ -76,21 +75,6 @@ async function reloadStateFallback(opts = {}) {
   }
 }
 
-async function handleUserMove(source, target) {
-  const current = getCurrentState();
-  if (isGameFinished(current)) return;
-
-  const uci = `${source}${target}`;
-
-  try {
-    const state = await postMove(uci);
-    applyServerState(state, { animateFromLast: true });
-  } catch (err) {
-    console.error("Lépés hiba:", err);
-    await reloadStateFallback({ animateFromLast: false });
-  }
-}
-
 async function handleNewGame() {
   try {
     const state = await postNewGame();
@@ -145,7 +129,7 @@ function initSocket() {
 }
 
 export async function bootstrapApp() {
-  initBoard(handleUserMove);
+  initBoard();
   bindButtons();
   renderConnectionOnly();
   initSocket();

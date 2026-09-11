@@ -31,13 +31,6 @@ export function fetchState() {
   return requestJson("/state", { method: "GET" });
 }
 
-export function postMove(uci) {
-  return requestJson("/move", {
-    method: "POST",
-    body: JSON.stringify({ uci }),
-  });
-}
-
 export function postNewGame() {
   return requestJson("/new-game", {
     method: "POST",

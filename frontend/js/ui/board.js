@@ -1,5 +1,4 @@
-import { getCurrentState } from "../app/state.js";
-import { isGameFinished, kingSquareFromFen } from "../utils/game.js";
+import { kingSquareFromFen } from "../utils/game.js";
 
 let board = null;
 
@@ -47,27 +46,14 @@ function animateFromNewState(previousState, newState) {
   }
 }
 
-function onUserDrop(source, target, onDropHandler) {
-  if (source === target) return "snapback";
-  if (isGameFinished(getCurrentState())) return "snapback";
-
-  if (typeof onDropHandler === "function") {
-    onDropHandler(source, target);
-  }
-}
-
-export function initBoard(onDropHandler) {
+export function initBoard() {
   const boardElement = document.getElementById("board");
 
   board = Chessboard(boardElement, {
     position: "start",
-    draggable: false,
     moveSpeed: "fast",
-    snapbackSpeed: 150,
-    snapSpeed: 100,
     pieceTheme: (piece) =>
       `assets/chessboardjs-1.0.0/img/chesspieces/chesscom_real/${piece.toLowerCase()}.png`,
-    onDrop: (source, target) => onUserDrop(source, target, onDropHandler),
   });
 
   // A chessboard.js egyszer, induláskor méri meg a konténert, és soha többé.
