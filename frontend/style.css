@@ -32,39 +32,30 @@ body {
      panel elváljon tőle — így nincs szükség árnyékra a mélységhez. A
      felületek mind a tábla két alapszíne KÖZÖTT mozognak. */
   --bg-app:     #DAC7A8;
-  --bg-board:   var(--bg-app);
   --panel-bg:   #F3E6CE;
-  --panel-bg-2: #EADCC0;
-  --surface-1:  #E3D2B4;
   --surface-2:  #CDB690;
   --surface-3:  #B89C74;
 
   /* A vonalak az akcentusból jönnek, nem semleges szürkéből — így a
      panel és a tábla ugyanahhoz a családhoz tartozik. */
-  --panel-border:      rgba(63, 58, 56, 0.24);
-  --panel-border-soft: rgba(63, 58, 56, 0.12);
+  --panel-border:      rgba(81, 58, 38, 0.24);
   --line: 1px solid var(--panel-border);
 
   --text-main:  #1C1917;
   --text-soft:  #35302D;
   --text-dim:   #8A7B61;
-  --text-label: #3F3A38;
 
   /* Grafit — a fekete bábuk átlagszíne. Gombok, eval-sáv sötét fele,
      szöveg-akcentus. A -dark/-mid/-light ugyanennek a sötétítése,
      illetve világosítása. */
-  --accent:           #3F3A38;
-  --accent-dark:      #2B2726;
-  --accent-mid:       #57504D;
-  --accent-light:     #6E6662;
+  --accent:           #513A26;
+  --accent-dark:      #37281A;
+  --accent-mid:       #705034;
 
   /* A meleg akcentus mostantól a tábla MUSTÁRSÁRGÁJA (--highlight-dark).
      Így a lépéslistában kiemelt utolsó lépés ugyanazt a színt viseli,
      mint a táblán kiemelt két mező — a panel és a tábla egy nyelvet beszél.
      A -dark változat sötétebb, mert a világos panelen szövegszín is. */
-  --accent-warm:      #DCC34B;
-  --accent-warm-dark: #7A6010;
-  --accent-warm-soft: rgba(220, 195, 75, 0.30);
 
   /* A FEHÉR bábuk színe a wk.png-ből, a bábu pixeleire (alfa > 8) számolva.
      A feketével ellentétben itt az alfa-súlyozott ÁTLAG (#BCAFA1) és a
@@ -73,7 +64,6 @@ body {
      lehúzni (átlag #3F3A38 vs medián #413A37). Ezért itt a MEDIÁN van
      használatban: az átlag szürkés-drappnak, piszkosnak látszott. */
   --piece-white: #F5EBE1;   /* világosítva, korábban: #ECD9C6 */
-  --piece-white-dark: #9A8F84;   /* a hover-gomb kerete */
 
   /* Szöveg sötét (grafit) háttéren: pontszám-jelvények, toast, parti-vége
      sáv. NEM az eval-sáv világos fele — az a --piece-white. */
@@ -86,10 +76,10 @@ body {
      a gomb egy alsó "peremet" (0 2px 0) és egy lágy vetett árnyékot; lenyomva
      a perem eltűnik és a gomb lejjebb csúszik, mint egy valódi billentyű. */
   --bar-dark:     var(--accent-dark);
-  --btn-bg:           #4A4441;   /* a függőleges átmenet ALJA */
-  --btn-bg-top:       #57504C;   /* az átmenet TETEJE — ettől domború */
-  --btn-bg-hover:     #5C5551;
-  --btn-bg-hover-top: #6A625E;
+  --btn-bg:           #5F442C;   /* a függőleges átmenet ALJA */
+  --btn-bg-top:       #6F5034;   /* az átmenet TETEJE — ettől domború */
+  --btn-bg-hover:     #765437;
+  --btn-bg-hover-top: #886240;
   --btn-shadow:       rgba(0, 0, 0, 0.45);
 
   --eval-white: #FAF5EB;   /* világosítva, korábban: #F3E6CE */
@@ -128,9 +118,6 @@ body {
   --radius-md:  6px;
   --radius-sm:  4px;
 
-  --shadow-lg: none;
-  --shadow-md: none;
-  --shadow-sm: none;
 }
 
 /* ── ALAP ─────────────────────────────────────────────────── */
@@ -464,7 +451,7 @@ body {
 }
 
 .top-line:hover {
-  background: rgba(63, 58, 56, 0.07);
+  background: rgba(81, 58, 38, 0.07);
 }
 
 .top-score {
@@ -497,7 +484,7 @@ body {
 }
 
 .top-line.top-line-best .top-move-line .first-move {
-  color: var(--accent-warm-dark);
+  color: var(--accent-mid);
   font-weight: 700;
 }
 
@@ -533,9 +520,11 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.10em;
-  color: var(--text-label);
-  background: var(--panel-bg-2);
-  border-bottom: 1px solid var(--panel-border-soft);
+  /* Tömör sáv, ugyanabból a sötétbarnából, mint a sidebar alja és az
+     eval-sáv. A felirat krém: 13.05:1. Keretvonal nem kell, a tömör sáv
+     maga a határ. */
+  color: var(--eval-white);
+  background: var(--accent-dark);
 }
 
 #moves-list {
@@ -582,7 +571,7 @@ body {
 }
 
 .move-row:nth-child(odd) {
-  background: rgba(63, 58, 56, 0.05);
+  background: rgba(81, 58, 38, 0.05);
 }
 
 .move-row:nth-child(even) {
@@ -590,7 +579,7 @@ body {
 }
 
 .move-row:hover {
-  background: rgba(63, 58, 56, 0.10);
+  background: rgba(81, 58, 38, 0.10);
 }
 
 .move-no {
@@ -619,8 +608,10 @@ body {
    eval-sáv sötét feléé, vagyis a fekete bábuk átlagszíne. Halk marad, és
    nem versenyzik a motorvonal mustársárga első lépésével. */
 #moves-list li.last-move {
-  background: rgba(63, 58, 56, 0.11) !important;
-  border-left: 3px solid var(--board-dark);
+  background: rgba(81, 58, 38, 0.11) !important;
+  /* A jelölő a középső barna — elég erős, hogy jelöljön, de nem olyan mély,
+     mint az eval-sáv vagy az alsó sáv, így nem versenyez velük. */
+  border-left: 3px solid var(--accent-mid);
 }
 
 #moves-list li.last-move .move-white,
@@ -732,9 +723,9 @@ button {
   background-color: var(--btn-bg);
   background-image: linear-gradient(to bottom, var(--btn-bg-top), var(--btn-bg));
   border: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12),
-              0 2px 0 var(--btn-shadow),
-              0 3px 8px rgba(0, 0, 0, 0.30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+              0 1px 0 var(--btn-shadow),
+              0 1px 3px rgba(0, 0, 0, 0.18);
   border-radius: var(--radius-md);
   padding: 12px 22px;
   font-size: 0.95rem;
@@ -758,10 +749,10 @@ button:hover {
 
 /* Lenyomva: a gomb ráül a saját peremére. */
 button:active {
-  transform: translateY(2px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
               0 0 0 var(--btn-shadow),
-              0 1px 3px rgba(0, 0, 0, 0.30);
+              0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 /* ── TOAST ────────────────────────────────────────────────── */
