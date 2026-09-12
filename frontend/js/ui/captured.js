@@ -25,11 +25,12 @@ function buildGroup(type, count, side) {
   group.className = "cap-group";
 
   for (let i = 0; i < count; i++) {
-    const img = document.createElement("img");
-    img.className = "cap-icon";
-    img.src = pieceImageUrl(`${side}${type}`);
-    img.alt = "";
-    group.appendChild(img);
+    const icon = document.createElement("span");
+    icon.className = `cap-icon cap-icon-${side}`;
+    // A bábukép MASZKKÉNT megy rá, nem képként: így csak a sziluettje marad,
+    // a színét a CSS adja. Lásd a style.css magyarázatát.
+    icon.style.setProperty("--cap-mask", `url("${pieceImageUrl(`${side}${type}`)}")`);
+    group.appendChild(icon);
   }
 
   return group;

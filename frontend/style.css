@@ -198,21 +198,52 @@ body {
   margin-left: -15px;
 }
 
-/* Ugyanazok a képek, mint a táblán álló bábuk. Kis méretben halkítva, mert
-   nem ők a főszereplők — a tábla az.
+/* A bábukép MASZKKÉNT megy rá az elemre, nem képként — a látható forma a
+   kép alfa-csatornája, a szín pedig a background-color. Ettől lapos
+   SZILUETT lesz belőle, minden belső részlet és körvonal nélkül.
 
-   A negatív oldalmargó nem esztétikai finomhangolás: a bábuképekben ÜRES
-   KERET van a rajz körül, és mérve ez nem kevés — a gyalog a kép
-   szélességének mindössze 55%-át tölti ki (17 px üres balról, 19 px
-   jobbról a 80-ból), a huszár 75%-ot, a vezér 88%-ot. Enélkül a „térköz"
-   nagy része maga a kép üres széle lenne, nem a beállított rés. */
+   Ez azért kell, mert a részletes bábuképek egymásra csúsztatva egy
+   olvashatatlan masszává olvadnak: nem lehet megszámolni, hány gyalog van.
+   Sziluettként viszont a forma felfelé elkeskenyedik, így a fejek
+   elkülönülnek — a lichess is pontosan ezt csinálja (az ő material-ikonjaik
+   fill és stroke értéke is ugyanaz az egy szürke).
+
+   Ráadásul így semmilyen új eszközt nem kell behozni: ugyanazok a
+   bábuképek szolgálnak maszknak, amik a táblán is állnak, tehát a készlet
+   cseréjével ezek is együtt váltanak. */
 .cap-icon {
   width: 26px;
   height: 26px;
   margin-left: -4px;
   margin-right: -4px;
   display: block;
-  opacity: 0.82;
+
+  -webkit-mask-image: var(--cap-mask);
+  mask-image: var(--cap-mask);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.cap-icon-b {
+  background-color: rgba(55, 40, 26, 0.85);
+}
+
+/* A világos sziluettek vékony sötét kontúrt kapnak. Ez nem díszítés: a
+   bézs háttéren a világos forma önmagában is halvány, egymásra csúsztatva
+   pedig teljesen összeolvad — 64 px-re nagyítva összehasonlítva a kontúr
+   nélküli három gyalog egyetlen massza, kontúrral viszont megszámlálható.
+   Négy irányú drop-shadow adja ki a körvonalat (a filternek nincs
+   "outline" változata). */
+.cap-icon-w {
+  background-color: rgba(255, 252, 246, 0.97);
+  filter: drop-shadow(0.9px 0 0 rgba(55, 40, 26, 0.95))
+          drop-shadow(-0.9px 0 0 rgba(55, 40, 26, 0.95))
+          drop-shadow(0 0.9px 0 rgba(55, 40, 26, 0.95))
+          drop-shadow(0 -0.9px 0 rgba(55, 40, 26, 0.95));
 }
 
 .cap-score {
