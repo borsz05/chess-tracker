@@ -1,8 +1,8 @@
 import { getEl, emptyElement } from "../utils/dom.js";
-
-const SVG_NS = "http://www.w3.org/2000/svg";
 import { materialFromFen } from "../utils/material.js";
 import { PIECE_PATHS } from "./piece-paths.js";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 /**
  * A leütött bábuk két sávja a tábla fölött és alatt.
