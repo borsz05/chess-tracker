@@ -80,9 +80,13 @@ body {
   --eval-white: #F3E6CE;
   --eval-black: #3F3A38;
 
-  /* A tábla mezői. */
-  --board-light: #EDD6B0;   /* világos bézs */
-  --board-dark:  #B88762;   /* barna */
+  /* A tábla mezőit egy KÉP adja (lásd a .board-b72b1 szabályt), nem ezek a
+     változók festik. Az itteni két érték a KÉP saját színe — a koordináta-
+     feliratoknak tudniuk kell, milyen színű mezőre írnak. A brown.png-ből
+     kimintázva pontosan ez a két hex jön ki, tehát a tábla kinézete nem
+     változott, csak a forrása. */
+  --board-light: #EDD6B0;   /* a brown.png világos mezője */
+  --board-dark:  #B88762;   /* a brown.png barna mezője */
 
   /* Az utolsó lépés két mezőjének színe (világos, illetve sötét mezőn). */
   --highlight-light: #F6EB72;   /* világos citromsárga */
@@ -258,19 +262,32 @@ body {
   width: min(82vh, 78vw);
 }
 
+/* A tábla EGYETLEN kép, nem 64 kézzel színezett doboz. A kép 1600x1600,
+   pontosan 200 px/mező, keret és koordináták nélkül, ezért a 100% 100%
+   méretezés pixelre a rácsra ül: a .board-b72b1 box-sizing: content-box,
+   tehát a keret KÍVÜLRE nő, és a padding-doboz épp a 8x8 mező. */
 .board-b72b1 {
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--panel-border);
+  background-image: url("assets/chessboardjs-1.0.0/img/boards/brown.png");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
+/* A mezők ÁTLÁTSZÓAK, hogy a tábla képe látsszon alattuk. A koordináta-
+   feliratok színe viszont mezőnként változik, ezért kell tudni, milyen
+   színű mezőre írnak.
+
+   Az utolsó lépés kiemelése és a sakk-derengés VÁLTOZATLAN: azok a mezőkre
+   ülnek, vagyis a kép FÖLÉ rajzolódnak. */
 .white-1e1d7 {
-  background-color: var(--board-light) !important;
+  background-color: transparent !important;
   color: var(--board-dark) !important;
 }
 
 .black-3c85d {
-  background-color: var(--board-dark) !important;
+  background-color: transparent !important;
   color: var(--board-light) !important;
 }
 
