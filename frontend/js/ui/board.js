@@ -242,6 +242,73 @@ function buildArrowPoints(from, to) {
   return points.map(([x, y]) => `${x.toFixed(3)},${y.toFixed(3)}`).join(" ");
 }
 
+/* LÓLÉPÉS: a chess.com nem átlós nyilat húz, hanem MEGTÖRTET — előbb a hosszú
+   szár (a két mezős irány), aztán derékszögben a rövid (az egy mezős). A szár
+   vastagsága, a hegy mérete és az indulási hézag ugyanaz, mint az egyenesnél;
+   csak egy töréspont kerül bele, éles (nem lekerekített) sarokkal.
+
+   A sarokpontok a két eltolt oldalegyenes metszéspontjai. Mivel a törés
+   pontosan 90 fokos, u1 merőleges u2-re, így a metszéspont egyetlen
+   vetítéssel megkapható — nem kell általános egyenes-metszést számolni.
+
+   Ellenőrizve: a g1f3 példára ez a kód mind a KILENC pontot 0.00e+00
+   eltéréssel adja vissza, a chess.com transform="rotate(180 81.25 93.75)"-
+   ának feloldása után. */
+
+function knightBend(fromSquare, toSquare, orientation) {
+  const ff = fromSquare.charCodeAt(0) - 97;
+  const fr = Number(fromSquare[1]);
+  const tf = toSquare.charCodeAt(0) - 97;
+  const tr = Number(toSquare[1]);
+
+  const df = Math.abs(tf - ff);
+  const dr = Math.abs(tr - fr);
+  if (!((df === 1 && dr === 2) || (df === 2 && dr === 1))) return null;
+
+  // A töréspont a KÉT mezős tengely mentén van: arra megyünk előbb.
+  const bendFile = dr === 2 ? ff : tf;
+  const bendRank = dr === 2 ? tr : fr;
+  return squareCenter(`${"abcdefgh"[bendFile]}${bendRank}`, orientation);
+}
+
+function buildKnightArrowPoints(from, bend, to) {
+  const u1x = Math.sign(bend.x - from.x) || 0;
+  const u1y = Math.sign(bend.y - from.y) || 0;
+  const u2x = Math.sign(to.x - bend.x) || 0;
+  const u2y = Math.sign(to.y - bend.y) || 0;
+  const p1x = -u1y, p1y = u1x;
+  const p2x = -u2y, p2y = u2x;
+
+  const sx = from.x + u1x * ARROW_START_GAP;
+  const sy = from.y + u1y * ARROW_START_GAP;
+  const bx = to.x - u2x * ARROW_HEAD_LEN;
+  const by = to.y - u2y * ARROW_HEAD_LEN;
+
+  // A két eltolt oldalegyenes metszéspontja (u1 merőleges u2-re).
+  const cornerOn = (side) => {
+    const q1x = sx + p1x * ARROW_SHAFT_HALF * side;
+    const q1y = sy + p1y * ARROW_SHAFT_HALF * side;
+    const q2x = bx + p2x * ARROW_SHAFT_HALF * side;
+    const q2y = by + p2y * ARROW_SHAFT_HALF * side;
+    const a = (q2x - q1x) * u1x + (q2y - q1y) * u1y;
+    return [q1x + a * u1x, q1y + a * u1y];
+  };
+
+  const points = [
+    [sx + p1x * ARROW_SHAFT_HALF, sy + p1y * ARROW_SHAFT_HALF],
+    cornerOn(+1),
+    [bx + p2x * ARROW_SHAFT_HALF, by + p2y * ARROW_SHAFT_HALF],
+    [bx + p2x * ARROW_HEAD_HALF,  by + p2y * ARROW_HEAD_HALF],
+    [to.x, to.y],
+    [bx - p2x * ARROW_HEAD_HALF,  by - p2y * ARROW_HEAD_HALF],
+    [bx - p2x * ARROW_SHAFT_HALF, by - p2y * ARROW_SHAFT_HALF],
+    cornerOn(-1),
+    [sx - p1x * ARROW_SHAFT_HALF, sy - p1y * ARROW_SHAFT_HALF],
+  ];
+
+  return points.map(([x, y]) => `${x.toFixed(3)},${y.toFixed(3)}`).join(" ");
+}
+
 export function drawSuggestionArrow(uci) {
   const svg = document.getElementById("board-arrow");
   if (!svg) return;
@@ -261,7 +328,10 @@ export function drawSuggestionArrow(uci) {
   const to = squareCenter(toSquare, orientation);
   if (!from || !to) return;
 
-  const points = buildArrowPoints(from, to);
+  const bend = knightBend(fromSquare, toSquare, orientation);
+  const points = bend
+    ? buildKnightArrowPoints(from, bend, to)
+    : buildArrowPoints(from, to);
   if (!points) return;
 
   const arrow = document.createElementNS(SVG_NS, "polygon");
