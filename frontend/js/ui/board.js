@@ -49,7 +49,7 @@ export function initBoard() {
     position: "start",
     moveSpeed: "fast",
     pieceTheme: (piece) =>
-      `assets/chessboardjs-1.0.0/img/chesspieces/chesscom_real/${piece.toLowerCase()}.png`,
+      `assets/chessboardjs-1.0.0/img/chesspieces/wikipedia/${piece.toLowerCase()}.png`,
   });
 
   // A chessboard.js egyszer, induláskor méri meg a konténert, és soha többé.
@@ -348,8 +348,12 @@ export function drawSuggestionArrow(uci) {
  * a tábla méretét nem érinti — nem tud visszacsatolni a ResizeObserverbe.
  */
 function syncColumnHeight() {
+  // A jobb oszlop a TELJES bal oldali blokkhoz igazodik: tábla + a fölötte
+  // és alatta futó leütött-bábu sávok. Ha a sávok valamiért hiányoznának,
+  // visszaesünk a puszta tábla magasságára.
+  const stack = document.querySelector(".board-stack");
   const inner = document.querySelector("#board .board-b72b1");
-  const height = inner?.getBoundingClientRect().height;
+  const height = (stack ?? inner)?.getBoundingClientRect().height;
   if (!height) return;
   document.documentElement.style.setProperty("--board-height", `${Math.round(height)}px`);
 }

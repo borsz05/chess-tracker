@@ -108,6 +108,12 @@ body {
      visszafejtve (lásd ui/board.js), a szín és az áttetszőség innen
      állítható. A chess.com rgba(72,193,249,0.8)-at rajzol opacity: 0.8-cal,
      ami effektíve 0.64 — az alábbi két érték ezzel gyakorlatilag azonos. */
+  /* Az eval-sáv szélessége azért változó, mert a leütött bábuk sávjai
+     ehhez igazodnak: annyival beljebb kezdődnek, hogy a TÁBLA bal szélével
+     essenek egy vonalba, ne az eval-sávéval. */
+  --eval-bar-width: 34px;
+  --eval-bar-gap:   16px;
+
   --arrow-color:   #47C1F9;
   --arrow-opacity: 0.64;
 
@@ -160,6 +166,64 @@ body {
   justify-content: center;
 }
 
+/* A tábla és a két leütött-bábu sáv egy oszlopban. Az eval-sáv a
+   .board-with-eval-en belül marad, ezért továbbra is csak a TÁBLA
+   magasságára feszül, nem az egész oszlopra. */
+.board-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+/* Leütött bábuk. A bal oldali térköz pontosan az eval-sáv helye, hogy a
+   sáv a tábla bal szélével kezdődjön. */
+.captured-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding-left: calc(var(--eval-bar-width) + var(--eval-bar-gap));
+  box-sizing: content-box;
+}
+
+/* Egy bábutípus csoportja: az azonos darabok egymásra csúsznak, ahogy a
+   chess.com is csinálja — így nyolc gyalog sem tolja szét a sávot. */
+.cap-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cap-group .cap-icon + .cap-icon {
+  margin-left: -9px;
+}
+
+.cap-icon {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+
+/* A sziluettek a lap hátterén ülnek, ezért halkak: nem ők a főszereplők.
+   A világos bábuk körvonalat kapnak, különben elvesznének a bézs háttéren. */
+.cap-icon-b path {
+  fill: rgba(55, 40, 26, 0.72);
+}
+
+.cap-icon-w path {
+  fill: rgba(255, 252, 246, 0.92);
+  stroke: rgba(55, 40, 26, 0.55);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+
+.cap-score {
+  margin-left: 3px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
 .board-with-eval {
   display: flex;
   align-items: stretch;
@@ -174,7 +238,7 @@ body {
   width: 480px;
   max-width: 480px;
   min-width: 0;
-  height: var(--board-height, min(82vh, 78vw));
+  height: var(--board-height, min(78vh, 78vw));
   margin-right: 16px;
   display: flex;
   flex-direction: column;
@@ -184,11 +248,11 @@ body {
    Az érték annál a végénél áll, amelyik fél éppen vezet: fehér előny ->
    alul, fekete előny -> felül. */
 #eval-bar {
-  width: 34px;
+  width: var(--eval-bar-width);
   background: var(--eval-black);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-right: 16px;
+  margin-right: var(--eval-bar-gap);
   position: relative;
 }
 
@@ -258,11 +322,11 @@ body {
 #board-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: min(82vh, 78vw);
+  width: min(78vh, 78vw);
 }
 
 #board {
-  width: min(82vh, 78vw);
+  width: min(78vh, 78vw);
 }
 
 /* A tábla EGYETLEN kép, nem 64 kézzel színezett doboz. A kép 1600x1600,

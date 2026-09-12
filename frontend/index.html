@@ -14,15 +14,22 @@
 <body>
   <div class="app-container">
     <div class="board-area">
-      <div class="board-with-eval">
-        <div id="eval-bar">
-          <div id="eval-bar-fill"></div>
-          <span id="eval-bar-score">0.0</span>
+      <div class="board-stack">
+        <!-- A felső sáv a SÖTÉTÉ: azt mutatja, amit ő ütött le (világos bábuk). -->
+        <div class="captured-strip" id="captured-black"></div>
+
+        <div class="board-with-eval">
+          <div id="eval-bar">
+            <div id="eval-bar-fill"></div>
+            <span id="eval-bar-score">0.0</span>
+          </div>
+          <div id="board-wrap">
+            <div id="board"></div>
+            <svg id="board-arrow" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
         </div>
-        <div id="board-wrap">
-          <div id="board"></div>
-          <svg id="board-arrow" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
-        </div>
+
+        <div class="captured-strip" id="captured-white"></div>
       </div>
     </div>
 
