@@ -216,19 +216,36 @@ body {
   overflow: visible;
 }
 
+/* Két szín van oldalanként: a KITÖLTÉS (--cap-fill) és az ÉL (--cap-edge).
+   Az él mindig a kitöltés ellentéte, mert három dolgot csinál egyszerre:
+     1. körvonalat ad a bábunak,
+     2. kirajzolja a belső vonalakat (a futó rését, a bástya sávjait),
+     3. elválasztja az egymásra csúszó azonos bábukat.
+
+   A `line` szerepű path-ok NYITOTT vonalak (pl. "M 11,14 L 34,14"), nincs
+   bezárt területük — rájuk a fill hatástalan, kizárólag a stroke látszik.
+   A `cut` path-ok viszont zárt körök (a huszár szeme és orrlyuka), azokat
+   ki kell tölteni, különben csak a peremük látszana. */
 .cap-icon path {
-  stroke: var(--bg-app);
+  stroke: var(--cap-edge);
   stroke-width: 1.6;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
 .cap-icon path[data-role="body"] { fill: var(--cap-fill); }
-.cap-icon path[data-role="cut"]  { fill: var(--bg-app); }
+.cap-icon path[data-role="cut"]  { fill: var(--cap-edge); }
 .cap-icon path[data-role="line"] { fill: none; }
 
-.cap-icon-b { --cap-fill: rgba(55, 40, 26, 0.88); }
-.cap-icon-w { --cap-fill: rgba(255, 252, 246, 0.97); }
+.cap-icon-b {
+  --cap-fill: rgba(55, 40, 26, 0.88);
+  --cap-edge: var(--panel-bg);
+}
+
+.cap-icon-w {
+  --cap-fill: rgba(255, 252, 246, 0.97);
+  --cap-edge: var(--accent-dark);
+}
 
 .cap-score {
   margin-left: 3px;
