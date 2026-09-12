@@ -104,13 +104,12 @@ body {
   --check-core: rgba(214, 44, 32, 0.92);
   --check-edge: rgba(184, 26, 16, 0.42);
 
-  /* A motor javaslatának nyila. A geometria a lichess chessgroundból jön,
-     a szín és az áttetszőség innen állítható. */
+  /* A motor javaslatának nyila. A geometriája a chess.com-éból van
+     visszafejtve (lásd ui/board.js), a szín és az áttetszőség innen
+     állítható. A chess.com rgba(72,193,249,0.8)-at rajzol opacity: 0.8-cal,
+     ami effektíve 0.64 — az alábbi két érték ezzel gyakorlatilag azonos. */
   --arrow-color:   #47C1F9;
   --arrow-opacity: 0.64;
-  /* Vonalvastagság a chessground képlete szerint: lineWidth/64 mezőnyi.
-     A mi viewBoxunkban 1 mező = 12.5, tehát 10/64 * 12.5 = 1.953. */
-  --arrow-width:   1.953;
 
 
   --radius-xl: 10px;
@@ -348,23 +347,13 @@ body {
   overflow: visible;
 }
 
-/* A nyíl geometriája a lichess chessgroundból (src/svg.ts, renderArrow):
-   kerek végű vonal + `marker-end` nyílhegy. A hegy azért marker, mert a
-   markerUnits alapból "strokeWidth", tehát a hegy MAGÁTÓL együtt méreteződik
-   a szárral — és mivel a marker a vonal rajzolásának a része, az `opacity`
-   az egészre EGYSZER hat. A régi megoldásban a szár és a külön poligon-hegy
-   külön kapott áttetszőséget, ezért az átfedésüknél sötétebb folt látszott. */
+/* A nyíl EGYETLEN kitöltött polygon (a pontjait a ui/board.js számolja), nem
+   vonal + marker páros. Emiatt az `opacity` természetesen egyszer hat az
+   egészre — nincs sötétebb folt ott, ahol a szár és a hegy átfedné egymást. */
 #board-arrow .suggestion {
-  stroke: var(--arrow-color);
-  stroke-width: var(--arrow-width);
-  stroke-linecap: round;
-  fill: none;
-  opacity: var(--arrow-opacity);
-}
-
-#board-arrow .suggestion-head {
   fill: var(--arrow-color);
   stroke: none;
+  opacity: var(--arrow-opacity);
 }
 
 /* ── JOBB OLDALI PANEL ────────────────────────────────────── */

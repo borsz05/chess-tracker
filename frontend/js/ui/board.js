@@ -192,45 +192,54 @@ function squareCenter(square, orientation) {
 
 let lastSuggestionUci = null;
 
-/* A nyíl méretezése a lichess chessgroundból (src/svg.ts). Ott a viewBox
-   egysége EGY mező, itt a tábla 0..100, tehát egy mező 12.5 — minden
-   chessground-érték ezzel szorzódik.
+/* A nyíl geometriája a CHESS.COM-éból, a böngésző fejlesztői eszközeivel
+   kinyert polygonból visszafejtve. Ők EGYETLEN hétpontos polygonnal rajzolnak
+   (nem vonal + marker párossal), ráadásul ugyanabban a 0..100-as viewBoxban,
+   mint mi — így az értékek közvetlenül átvehetők.
 
-   chessground:  stroke-width = lineWidth / 64        (lineWidth alapból 10)
-                 arrowMargin  = (shorten ? 20 : 10) / 64
-   A margó a CÉLNÁL rövidíti a vonalat; a `shorten` akkor igaz, ha a
-   célmezőn áll bábu — így a nyílhegy megáll a bábu előtt, nem takarja el. */
-const SQUARE_UNITS = 12.5;
-const ARROW_MARGIN_OCCUPIED = (20 / 64) * SQUARE_UNITS;
-const ARROW_MARGIN_EMPTY = (10 / 64) * SQUARE_UNITS;
+   A mért arányok (egy mező = 12.5 egység):
+     szár szélessége  2.75  = 0.220 mező
+     hegy szélessége  6.50  = 0.520 mező
+     hegy hossza      4.50  = 0.360 mező
+     indulási hézag   4.50  = 0.360 mező, a FORRÁS közepétől
 
-/* A nyílhegy chessground-marker: a path és a marker méretei szó szerint
-   onnan valók (markerWidth/Height 4, refX 2.05, refY 2, "M0,0 V4 L3,2 Z").
-   markerUnits alapból "strokeWidth", ezért a hegy a szárral együtt nő. */
-function buildArrowHeadDefs() {
-  const defs = document.createElementNS(SVG_NS, "defs");
-  const marker = document.createElementNS(SVG_NS, "marker");
+   Két dologban tér el a korábbi, chessground-alapú változatunktól: a szár
+   vastagabb, a hegy pedig kisebb; és a hegy CSÚCSA pontosan a célmező
+   közepén áll, vagyis a rövidítés a forrás oldalán van, nem a célnál.
 
-  marker.setAttribute("id", "suggestion-arrowhead");
-  marker.setAttribute("orient", "auto");
-  marker.setAttribute("markerWidth", "4");
-  marker.setAttribute("markerHeight", "4");
-  marker.setAttribute("refX", "2.05");
-  marker.setAttribute("refY", "2");
+   A lenti pontsorrend a d2d4 példa mind a hét pontját pontosan visszaadja. */
+const ARROW_SHAFT_HALF = 1.375;   /* 2.75 / 2 */
+const ARROW_HEAD_HALF  = 3.25;    /* 6.50 / 2 */
+const ARROW_HEAD_LEN   = 4.5;
+const ARROW_START_GAP  = 4.5;
 
-  const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("class", "suggestion-head");
-  path.setAttribute("d", "M0,0 V4 L3,2 Z");
+function buildArrowPoints(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.001) return null;
 
-  marker.appendChild(path);
-  defs.appendChild(marker);
-  return defs;
-}
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;   // a haladási irányra merőleges egységvektor
+  const py = ux;
 
-function isSquareOccupied(square) {
-  if (!board) return false;
-  const position = board.position();
-  return !!(position && position[square]);
+  const sx = from.x + ux * ARROW_START_GAP;   // a szár kezdete
+  const sy = from.y + uy * ARROW_START_GAP;
+  const bx = to.x - ux * ARROW_HEAD_LEN;      // a hegy alapja
+  const by = to.y - uy * ARROW_HEAD_LEN;
+
+  const points = [
+    [sx + px * ARROW_SHAFT_HALF, sy + py * ARROW_SHAFT_HALF],
+    [bx + px * ARROW_SHAFT_HALF, by + py * ARROW_SHAFT_HALF],
+    [bx + px * ARROW_HEAD_HALF,  by + py * ARROW_HEAD_HALF],
+    [to.x, to.y],                              // a csúcs: a célmező közepe
+    [bx - px * ARROW_HEAD_HALF,  by - py * ARROW_HEAD_HALF],
+    [bx - px * ARROW_SHAFT_HALF, by - py * ARROW_SHAFT_HALF],
+    [sx - px * ARROW_SHAFT_HALF, sy - py * ARROW_SHAFT_HALF],
+  ];
+
+  return points.map(([x, y]) => `${x.toFixed(3)},${y.toFixed(3)}`).join(" ");
 }
 
 export function drawSuggestionArrow(uci) {
@@ -252,25 +261,14 @@ export function drawSuggestionArrow(uci) {
   const to = squareCenter(toSquare, orientation);
   if (!from || !to) return;
 
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.hypot(dx, dy) < 0.001) return;
+  const points = buildArrowPoints(from, to);
+  if (!points) return;
 
-  const angle = Math.atan2(dy, dx);
-  const margin = isSquareOccupied(toSquare)
-    ? ARROW_MARGIN_OCCUPIED
-    : ARROW_MARGIN_EMPTY;
+  const arrow = document.createElementNS(SVG_NS, "polygon");
+  arrow.setAttribute("class", "suggestion");
+  arrow.setAttribute("points", points);
 
-  const shaft = document.createElementNS(SVG_NS, "line");
-  shaft.setAttribute("class", "suggestion");
-  shaft.setAttribute("x1", from.x.toFixed(2));
-  shaft.setAttribute("y1", from.y.toFixed(2));
-  shaft.setAttribute("x2", (to.x - Math.cos(angle) * margin).toFixed(2));
-  shaft.setAttribute("y2", (to.y - Math.sin(angle) * margin).toFixed(2));
-  shaft.setAttribute("marker-end", "url(#suggestion-arrowhead)");
-
-  svg.appendChild(buildArrowHeadDefs());
-  svg.appendChild(shaft);
+  svg.appendChild(arrow);
 }
 
 /**
