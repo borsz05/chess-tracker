@@ -180,7 +180,7 @@ body {
 .captured-strip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   height: 28px;
   padding-left: calc(var(--eval-bar-width) + var(--eval-bar-gap));
   box-sizing: content-box;
@@ -193,15 +193,24 @@ body {
   align-items: center;
 }
 
+/* Az azonos bábuk egymásra csúsznak, ahogy a chess.com is csinálja. */
 .cap-group .cap-icon + .cap-icon {
-  margin-left: -11px;
+  margin-left: -15px;
 }
 
 /* Ugyanazok a képek, mint a táblán álló bábuk. Kis méretben halkítva, mert
-   nem ők a főszereplők — a tábla az. */
+   nem ők a főszereplők — a tábla az.
+
+   A negatív oldalmargó nem esztétikai finomhangolás: a bábuképekben ÜRES
+   KERET van a rajz körül, és mérve ez nem kevés — a gyalog a kép
+   szélességének mindössze 55%-át tölti ki (17 px üres balról, 19 px
+   jobbról a 80-ból), a huszár 75%-ot, a vezér 88%-ot. Enélkül a „térköz"
+   nagy része maga a kép üres széle lenne, nem a beállított rés. */
 .cap-icon {
-  width: 23px;
-  height: 23px;
+  width: 26px;
+  height: 26px;
+  margin-left: -4px;
+  margin-right: -4px;
   display: block;
   opacity: 0.82;
 }
