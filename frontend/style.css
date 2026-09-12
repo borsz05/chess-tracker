@@ -180,8 +180,8 @@ body {
 .captured-strip {
   display: flex;
   align-items: center;
-  gap: 7px;
-  height: 26px;
+  gap: 8px;
+  height: 28px;
   padding-left: calc(var(--eval-bar-width) + var(--eval-bar-gap));
   box-sizing: content-box;
 }
@@ -194,26 +194,16 @@ body {
 }
 
 .cap-group .cap-icon + .cap-icon {
-  margin-left: -9px;
+  margin-left: -11px;
 }
 
+/* Ugyanazok a képek, mint a táblán álló bábuk. Kis méretben halkítva, mert
+   nem ők a főszereplők — a tábla az. */
 .cap-icon {
-  width: 19px;
-  height: 19px;
+  width: 23px;
+  height: 23px;
   display: block;
-}
-
-/* A sziluettek a lap hátterén ülnek, ezért halkak: nem ők a főszereplők.
-   A világos bábuk körvonalat kapnak, különben elvesznének a bézs háttéren. */
-.cap-icon-b path {
-  fill: rgba(55, 40, 26, 0.72);
-}
-
-.cap-icon-w path {
-  fill: rgba(255, 252, 246, 0.92);
-  stroke: rgba(55, 40, 26, 0.55);
-  stroke-width: 0.9;
-  stroke-linejoin: round;
+  opacity: 0.82;
 }
 
 .cap-score {

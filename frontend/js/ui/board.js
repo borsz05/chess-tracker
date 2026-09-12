@@ -1,4 +1,5 @@
 import { kingSquareFromFen } from "../utils/game.js";
+import { pieceImageUrl } from "./piece-theme.js";
 
 let board = null;
 
@@ -48,8 +49,7 @@ export function initBoard() {
   board = Chessboard(boardElement, {
     position: "start",
     moveSpeed: "fast",
-    pieceTheme: (piece) =>
-      `assets/chessboardjs-1.0.0/img/chesspieces/wikipedia/${piece.toLowerCase()}.png`,
+    pieceTheme: pieceImageUrl,
   });
 
   // A chessboard.js egyszer, induláskor méri meg a konténert, és soha többé.

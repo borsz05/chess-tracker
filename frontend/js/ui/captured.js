@@ -1,6 +1,6 @@
 import { getEl, emptyElement } from "../utils/dom.js";
 import { materialFromFen } from "../utils/material.js";
-import { createPieceIcon } from "./piece-icons.js";
+import { pieceImageUrl } from "./piece-theme.js";
 
 /**
  * A leütött bábuk két sávja a tábla fölött és alatt.
@@ -13,14 +13,23 @@ import { createPieceIcon } from "./piece-icons.js";
  * egyiken sem.
  */
 
-/** Egy bábutípus csoportja: az azonos bábuk egymásra csúsztatva. */
+/**
+ * Egy bábutípus csoportja: az azonos bábuk egymásra csúsztatva.
+ *
+ * Az ikonok UGYANAZOK a képek, mint a táblán álló bábuk (közös forrás:
+ * ui/piece-theme.js), így a készlet cseréjekor a sáv is vele vált, és a
+ * kettő nem tud elcsúszni egymástól.
+ */
 function buildGroup(type, count, side) {
   const group = document.createElement("span");
   group.className = "cap-group";
 
   for (let i = 0; i < count; i++) {
-    const icon = createPieceIcon(type, side);
-    if (icon) group.appendChild(icon);
+    const img = document.createElement("img");
+    img.className = "cap-icon";
+    img.src = pieceImageUrl(`${side}${type}`);
+    img.alt = "";
+    group.appendChild(img);
   }
 
   return group;
