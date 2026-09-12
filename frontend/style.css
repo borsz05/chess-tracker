@@ -198,53 +198,37 @@ body {
   margin-left: -15px;
 }
 
-/* A bábukép MASZKKÉNT megy rá az elemre, nem képként — a látható forma a
-   kép alfa-csatornája, a szín pedig a background-color. Ettől lapos
-   SZILUETT lesz belőle, minden belső részlet és körvonal nélkül.
+/* A sziluettek a Cburnett-alakzatokból (lásd tools/make_piece_paths.py).
+   A lényeg a HÁROM SZEREP: a test a sziluett színével telik ki, a belső
+   vonalak és a kontrasztos részletek viszont a HÁTTÉR színét kapják, így
+   kivágásként látszanak.
 
-   Ez azért kell, mert a részletes bábuképek egymásra csúsztatva egy
-   olvashatatlan masszává olvadnak: nem lehet megszámolni, hány gyalog van.
-   Sziluettként viszont a forma felfelé elkeskenyedik, így a fejek
-   elkülönülnek — a lichess is pontosan ezt csinálja (az ő material-ikonjaik
-   fill és stroke értéke is ugyanaz az egy szürke).
-
-   Ráadásul így semmilyen új eszközt nem kell behozni: ugyanazok a
-   bábuképek szolgálnak maszknak, amik a táblán is állnak, tehát a készlet
-   cseréjével ezek is együtt váltanak. */
+   Erre azért van szükség, mert a tömör sziluettből eltűnik a futó rése, a
+   bástya oromzata és a vezér koronájának tagolása is — több azonos bábu
+   egymásra csúsztatva pedig egyetlen olvashatatlan folttá olvadt. A stroke
+   a külső élen is fut, ezért az egymásra csúszó bábuk is elválnak. */
 .cap-icon {
   width: 26px;
   height: 26px;
   margin-left: -4px;
   margin-right: -4px;
   display: block;
-
-  -webkit-mask-image: var(--cap-mask);
-  mask-image: var(--cap-mask);
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
+  overflow: visible;
 }
 
-.cap-icon-b {
-  background-color: rgba(55, 40, 26, 0.85);
+.cap-icon path {
+  stroke: var(--bg-app);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
-/* A világos sziluettek vékony sötét kontúrt kapnak. Ez nem díszítés: a
-   bézs háttéren a világos forma önmagában is halvány, egymásra csúsztatva
-   pedig teljesen összeolvad — 64 px-re nagyítva összehasonlítva a kontúr
-   nélküli három gyalog egyetlen massza, kontúrral viszont megszámlálható.
-   Négy irányú drop-shadow adja ki a körvonalat (a filternek nincs
-   "outline" változata). */
-.cap-icon-w {
-  background-color: rgba(255, 252, 246, 0.97);
-  filter: drop-shadow(0.9px 0 0 rgba(55, 40, 26, 0.95))
-          drop-shadow(-0.9px 0 0 rgba(55, 40, 26, 0.95))
-          drop-shadow(0 0.9px 0 rgba(55, 40, 26, 0.95))
-          drop-shadow(0 -0.9px 0 rgba(55, 40, 26, 0.95));
-}
+.cap-icon path[data-role="body"] { fill: var(--cap-fill); }
+.cap-icon path[data-role="cut"]  { fill: var(--bg-app); }
+.cap-icon path[data-role="line"] { fill: none; }
+
+.cap-icon-b { --cap-fill: rgba(55, 40, 26, 0.88); }
+.cap-icon-w { --cap-fill: rgba(255, 252, 246, 0.97); }
 
 .cap-score {
   margin-left: 3px;

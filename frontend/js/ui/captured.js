@@ -1,6 +1,8 @@
 import { getEl, emptyElement } from "../utils/dom.js";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 import { materialFromFen } from "../utils/material.js";
-import { pieceImageUrl } from "./piece-theme.js";
+import { PIECE_PATHS } from "./piece-paths.js";
 
 /**
  * A leütött bábuk két sávja a tábla fölött és alatt.
@@ -14,23 +16,39 @@ import { pieceImageUrl } from "./piece-theme.js";
  */
 
 /**
- * Egy bábutípus csoportja: az azonos bábuk egymásra csúsztatva.
- *
- * Az ikonok UGYANAZOK a képek, mint a táblán álló bábuk (közös forrás:
- * ui/piece-theme.js), így a készlet cseréjekor a sáv is vele vált, és a
- * kettő nem tud elcsúszni egymástól.
+ * Egy bábu sziluettje: a Cburnett-alakzat, de lapos kitöltéssel és a belső
+ * vonalakkal KIVÁGÁSKÉNT (lásd tools/make_piece_paths.py). A színeket a
+ * style.css adja, itt csak a geometria és a szerepek vannak.
  */
+function buildIcon(type, side) {
+  const paths = PIECE_PATHS[type];
+  if (!paths) return null;
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 45 45");
+  svg.setAttribute("class", `cap-icon cap-icon-${side}`);
+  svg.setAttribute("aria-hidden", "true");
+
+  for (const entry of paths) {
+    const el = document.createElementNS(SVG_NS, "path");
+    el.setAttribute("d", entry.d);
+    el.setAttribute("data-role", entry.role);
+    if (entry["stroke-linecap"]) el.setAttribute("stroke-linecap", entry["stroke-linecap"]);
+    if (entry["stroke-linejoin"]) el.setAttribute("stroke-linejoin", entry["stroke-linejoin"]);
+    svg.appendChild(el);
+  }
+
+  return svg;
+}
+
+/** Egy bábutípus csoportja: az azonos bábuk egymásra csúsztatva. */
 function buildGroup(type, count, side) {
   const group = document.createElement("span");
   group.className = "cap-group";
 
   for (let i = 0; i < count; i++) {
-    const icon = document.createElement("span");
-    icon.className = `cap-icon cap-icon-${side}`;
-    // A bábukép MASZKKÉNT megy rá, nem képként: így csak a sziluettje marad,
-    // a színét a CSS adja. Lásd a style.css magyarázatát.
-    icon.style.setProperty("--cap-mask", `url("${pieceImageUrl(`${side}${type}`)}")`);
-    group.appendChild(icon);
+    const icon = buildIcon(type, side);
+    if (icon) group.appendChild(icon);
   }
 
   return group;

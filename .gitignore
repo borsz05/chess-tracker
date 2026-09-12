@@ -14,3 +14,6 @@ data_fen/
 .coverage
 .coverage.*
 htmlcov/
+
+# a Cburnett SVG-k letoltott cache-e (a tools/make_piece_paths.py toltiujra)
+tools/.cburnett-cache/
