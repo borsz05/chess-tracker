@@ -72,7 +72,7 @@ body {
      sötét kontúrja van, ami lehúzza az átlagot — a feketénél nem volt mit
      lehúzni (átlag #3F3A38 vs medián #413A37). Ezért itt a MEDIÁN van
      használatban: az átlag szürkés-drappnak, piszkosnak látszott. */
-  --piece-white: #ECD9C6;
+  --piece-white: #F5EBE1;   /* világosítva, korábban: #ECD9C6 */
   --piece-white-dark: #9A8F84;   /* a hover-gomb kerete */
 
   /* Szöveg sötét (grafit) háttéren: pontszám-jelvények, toast, parti-vége
@@ -92,7 +92,7 @@ body {
   --btn-bg-hover-top: #6A625E;
   --btn-shadow:       rgba(0, 0, 0, 0.45);
 
-  --eval-white: #F3E6CE;
+  --eval-white: #FAF5EB;   /* világosítva, korábban: #F3E6CE */
   /* Az eval-sáv sötét fele SZÁNDÉKOSAN ugyanaz, mint a sötét pontszám-pirula
      és a sidebar alsó sávja — var()-ral hivatkozva, hogy a három ne tudjon
      elcsúszni egymástól.  KORÁBBI: #3F3A38 (a világosabb grafit) */
@@ -480,7 +480,7 @@ body {
 }
 
 .top-score.score-white-lead {
-  background: #F7EDD9;
+  background: #FDFBF6;   /* világosítva, korábban: #F7EDD9 */
   color: var(--accent-dark);
 }
 
