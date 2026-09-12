@@ -77,8 +77,26 @@ body {
 
   /* Szöveg sötét (grafit) háttéren: pontszám-jelvények, toast, parti-vége
      sáv. NEM az eval-sáv világos fele — az a --piece-white. */
+  /* A sidebar sötét alsó sávja SZÁNDÉKOSAN ugyanaz, mint a sötét pontszám-
+     pirula (--accent-dark) — var()-ral hivatkozva, hogy a kettő ne tudjon
+     elcsúszni egymástól.
+
+     A gombok világosabb grafiton ülnek, de a savtól csak 1.54:1-gyel válnak
+     el — a formájuk és az ÁRNYÉKUK emeli ki őket, nem a kontraszt. Ezért kap
+     a gomb egy alsó "peremet" (0 2px 0) és egy lágy vetett árnyékot; lenyomva
+     a perem eltűnik és a gomb lejjebb csúszik, mint egy valódi billentyű. */
+  --bar-dark:     var(--accent-dark);
+  --btn-bg:           #4A4441;   /* a függőleges átmenet ALJA */
+  --btn-bg-top:       #57504C;   /* az átmenet TETEJE — ettől domború */
+  --btn-bg-hover:     #5C5551;
+  --btn-bg-hover-top: #6A625E;
+  --btn-shadow:       rgba(0, 0, 0, 0.45);
+
   --eval-white: #F3E6CE;
-  --eval-black: #3F3A38;
+  /* Az eval-sáv sötét fele SZÁNDÉKOSAN ugyanaz, mint a sötét pontszám-pirula
+     és a sidebar alsó sávja — var()-ral hivatkozva, hogy a három ne tudjon
+     elcsúszni egymástól.  KORÁBBI: #3F3A38 (a világosabb grafit) */
+  --eval-black: var(--accent-dark);
 
   /* A tábla mezőit egy KÉP adja (lásd a .board-b72b1 szabályt), nem ezek a
      változók festik. Az itteni két érték a KÉP saját színe — a koordináta-
@@ -186,7 +204,6 @@ body {
   overflow: hidden;
   margin-right: 16px;
   position: relative;
-  border: var(--line);
 }
 
 #eval-bar-fill {
@@ -269,7 +286,9 @@ body {
 .board-b72b1 {
   border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 1px solid var(--panel-border);
+  /* A chessboard.js alap-CSS-e 2px-es keretet ad (.board-b72b1{border:2px
+     solid #404040}); a sajátunk elhagyása kevés, ezt explicit kell kiütni. */
+  border: none;
   background-image: url("assets/chessboardjs-1.0.0/img/boards/brown.png");
   background-size: 100% 100%;
   background-repeat: no-repeat;
@@ -368,7 +387,6 @@ body {
   margin: 0;
   border-radius: var(--radius-xl);
   background: var(--panel-bg);
-  border: var(--line);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -617,9 +635,10 @@ body {
    ha van mit mondani. */
 .status-section {
   flex: 0 0 auto;
+  /* Sötétbarna sáv. Elválasztó vonal nem kell: a háttér különbsége
+     választja el a lépéslistától (12.31:1 a panel fölött). */
   padding: 18px 18px;
-  background: var(--panel-bg-2);
-  border-top: var(--line);
+  background: var(--bar-dark);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -636,17 +655,17 @@ body {
   align-items: flex-start;
   gap: 3px;
   font-size: 1.06rem;
-  color: var(--text-soft);
+  color: var(--eval-white);
 }
 
 .status-move-no {
   font-weight: 700;
-  color: var(--accent-dark);
+  color: var(--eval-white);
 }
 
 .status-side {
   font-weight: 600;
-  color: var(--text-main);
+  color: var(--eval-white);
 }
 
 /* A jelzések FIX HELYE: a panel ALATT, a lap hátterén — nem a sidebaron
@@ -703,30 +722,46 @@ body {
   margin-left: auto;
 }
 
+/* A gomb plasztikussága három rétegből áll, a chess.com gombjainak a
+   mintájára:
+     1. függőleges átmenet (világosabb tető -> sötétebb alj) = a domborulat,
+     2. `inset 0 1px 0` világos hajszálcsík a felső élen = a fénytörés,
+     3. `0 2px 0` alsó perem + lágy vetett árnyék = a kiemelkedés.
+   Lenyomva az 1px-es fénycsík marad, a perem viszont eltűnik. */
 button {
-  background: var(--accent);
-  border: 1px solid var(--accent-dark);
+  background-color: var(--btn-bg);
+  background-image: linear-gradient(to bottom, var(--btn-bg-top), var(--btn-bg));
+  border: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12),
+              0 2px 0 var(--btn-shadow),
+              0 3px 8px rgba(0, 0, 0, 0.30);
   border-radius: var(--radius-md);
   padding: 12px 22px;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  color: var(--piece-white);
+  color: var(--eval-white);
   white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease,
+              box-shadow 0.12s ease, transform 0.12s ease;
 }
 
 /* Hover: a két szín helyet cserél — a gomb a FEHÉR bábuk színét veszi fel,
    a felirat pedig a FEKETÉKÉT. */
+/* Hover: a gomb egy fokkal világosodik — nem invertál. */
 button:hover {
-  background: var(--piece-white);
-  border-color: var(--piece-white-dark);
-  color: var(--accent);
+  background-color: var(--btn-bg-hover);
+  background-image: linear-gradient(to bottom, var(--btn-bg-hover-top), var(--btn-bg-hover));
+  color: var(--eval-white);
 }
 
+/* Lenyomva: a gomb ráül a saját peremére. */
 button:active {
-  transform: translateY(1px);
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+              0 0 0 var(--btn-shadow),
+              0 1px 3px rgba(0, 0, 0, 0.30);
 }
 
 /* ── TOAST ────────────────────────────────────────────────── */
